@@ -76,7 +76,7 @@ GENOMEFILE =  os.path.join(config["referenceInfo"]["path"], config["referenceInf
 #As in every Snakemake, we need to set all the output files as inputs in rule all. To avoid the use of wildcards in the final rule of the file.
 rule all:
 	input:
-		expand(path+"/fastq/{name}_R{number}.fastq", name = name_full, number = ["1", "2"]),
+		#expand(path+"/fastq/{name}_R{number}.fastq", name = name_full, number = ["1", "2"]),
 		expand(path+"/fastq/{name_full}_R{number}_val_{number}.fq", number=["1","2"], name_full = name_full),
 		expand(path+"/alignment/{name_full}.bam", name_full = name_full),
 		expand(path+"/alignment/{name_full}_sort.bam", name_full = name_full),
@@ -101,15 +101,15 @@ rule all:
 
 
 #It is also needed to set the order of the rules.
-ruleorder: gzip > trim_galore > bwa_mem > samtools_sort > remove_duplicates > samtools_merge > samtools_index > depth_targets > depth_nontargets > calculateTargetSize > targets_coverageQC > coverageQC > rmdreport > samtools_subsample > add_readgroup_subsampled > samtools_index_subsampled > Mutect2 > filter_vcf > index_vcf > merge_vcf > sort_vcf > pass_vcf  > Allelic_F
+ruleorder: trim_galore > bwa_mem > samtools_sort > remove_duplicates > samtools_merge > samtools_index > depth_targets > depth_nontargets > calculateTargetSize > targets_coverageQC > coverageQC > rmdreport > samtools_subsample > add_readgroup_subsampled > samtools_index_subsampled > Mutect2 > filter_vcf > index_vcf > merge_vcf > sort_vcf > pass_vcf  > Allelic_F
 
-rule gzip:
-	input:
-		path+"/fastq/{name_full}_R{number}.fastq.gz"
-	output:
-		path+"/fastq/{name_full}_R{number}.fastq"
-	shell:
-		"gzip -d {input} > {output}"
+#rule gzip:
+#	input:
+#		path+"/fastq/{name_full}_R{number}.fastq.gz"
+#	output:
+#		path+"/fastq/{name_full}_R{number}.fastq"
+#	shell:
+#		"gzip -d {input} > {output}"
 
 rule trim_galore:
 	input:
@@ -306,9 +306,8 @@ rule add_readgroup_subsampled:
 	output:
 		path+"/subsampling/{name_sample}_merged_subsampled_RG_LG.bam"
 	shell:
-		'module load gatk/4.0.9.0 ; i=$( echo {input.bam} | sed \"s/AS/%AS/\" |  cut -f 2 -d \"%\" | cut -f 1 -d \"_\"  )  ; \
-		phenotype=$( grep $i {input.snakedata} | cut -f 38 | cut -d "-" -f 1 | sed "s/skin/TUMOR/" | sed "s/liver/NORMAL/" | sort | uniq ) ; \
-		gatk AddOrReplaceReadGroups  -ID ID  -PL Illumina -LB  ID   -PU ID  -SM $phenotype  -I  {input.bam} -O  {output} '
+		'module load gatk/4.0.9.0 ; i=$( echo {input.bam} | sed \"s/AS/%AS/\" |  cut -f 2 -d \"%\" | cut -f 2 -d \"_\"  )  ; \
+		gatk AddOrReplaceReadGroups  -ID ID  -PL Illumina -LB  ID   -PU ID  -SM $i  -I  {input.bam} -O  {output} '
 
 rule samtools_index_subsampled:
 	input:
