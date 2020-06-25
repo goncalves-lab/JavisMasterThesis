@@ -90,9 +90,9 @@ rule all:
 		expand(path+"/subsampling/{name_sample}_merged_subsampled.bam", name_sample = name_sample),
 		expand(path+"/subsampling/{name_sample}_merged_subsampled_RG_LG.bam", name_sample = name_sample),
 		expand(path+"/subsampling/{name_sample}_merged_subsampled_RG_LG.bam.bai", name_sample = name_sample),
-		expand(path+"/Mutation_calling/{tumor_sample}/{chrname2}_Mutect2_output.vcf", tumor_sample = tumor_sample, chrname2 = chrname2),
-		expand(path+"/Mutation_calling/{tumor_sample}/{chrname2}_Mutect2_output_filtered.vcf", tumor_sample = tumor_sample, chrname2 = chrname2),
-		expand(path+"/Mutation_calling/{tumor_sample}/{chrname2}_Mutect2_output_filtered.vcf.gz", tumor_sample = tumor_sample, chrname2 = chrname2),
+		expand(path+"/Mutation_calling/{tumor_sample}/Mutect2/{chrname2}_Mutect2_output.vcf", tumor_sample = tumor_sample, chrname2 = chrname2),
+		expand(path+"/Mutation_calling/{tumor_sample}/Mutect2/{chrname2}_Mutect2_output_filtered.vcf", tumor_sample = tumor_sample, chrname2 = chrname2),
+		expand(path+"/Mutation_calling/{tumor_sample}/Mutect2/{chrname2}_Mutect2_output_filtered.vcf.gz", tumor_sample = tumor_sample, chrname2 = chrname2),
 		expand(path+"/Mutation_calling/{tumor_sample}/Mutect2_output_filtered.vcf", tumor_sample = tumor_sample),
 		expand(path+"/Mutation_calling/{tumor_sample}/Mutect2_output_filtered_sort.vcf", tumor_sample = tumor_sample),
 		expand(path+"/Mutation_calling/{tumor_sample}/pass.vcf", tumor_sample = tumor_sample),
@@ -297,7 +297,7 @@ rule samtools_subsample:
 	output:
 		path+"/subsampling/{name_sample}_merged_subsampled.bam"
 	shell:
-		" module load samtools/1.10; i=$( echo {input.bam} | sed \"s/AS/%AS/\" |  cut -f 2 -d \"%\" | cut -f 1 -d \"_\"  ) ; value=$( grep $i {input.view_values} | cut -f 3 | sort | uniq ) ; samtools view -s $value {input.bam} > {output} "
+		" module load samtools/1.10; i=$( echo {input.bam} | sed \"s/AS/%AS/\" |  cut -f 2 -d \"%\" | cut -f 1 -d \"_\"  ) ; value=$( grep $i {input.view_values} | cut -f 3 | sort | uniq ) ; samtools view -hbs $value {input.bam} > {output} "
 
 rule add_readgroup_subsampled:
 	input:
@@ -328,24 +328,24 @@ rule Mutect2:
 		chr=chrpath+"{chrname2}.bed",
 		path=path+"/Mutation_calling"
 	output:
-		path+"/Mutation_calling/{tumor_sample}/{chrname2}_Mutect2_output.vcf"
+		path+"/Mutation_calling/{tumor_sample}/Mutect2/{chrname2}_Mutect2_output.vcf"
 	shell:
-		" mkdir {input.path}/{wildcards.tumor_sample} ; module load gatk/4.0.9.0 ; module load samtools ;  gatk Mutect2 -L {input.chr}  -R  {input.ref}  -I {input.tumor}  -I {input.normal} -tumor TUMOR -normal NORMAL  -O {output} "
+		" mkdir -p {input.path}/{wildcards.tumor_sample}/Mutect2 ; module load gatk/4.0.9.0 ; module load samtools ;  gatk Mutect2 -L {input.chr}  -R  {input.ref}  -I {input.tumor}  -I {input.normal} -tumor TUMOR -normal NORMAL  -O {output} "
 
 rule filter_vcf:
 	input:
-		path+"/Mutation_calling/{tumor_sample}/{chrname2}_Mutect2_output.vcf"
+		path+"/Mutation_calling/{tumor_sample}/Mutect2/{chrname2}_Mutect2_output.vcf"
 	output:
-		path+"/Mutation_calling/{tumor_sample}/{chrname2}_Mutect2_output_filtered.vcf"
+		path+"/Mutation_calling/{tumor_sample}/Mutect2/{chrname2}_Mutect2_output_filtered.vcf"
 	shell:
 		" module load gatk/4.0.9.0 ; gatk  FilterMutectCalls -V {input} -O {output} "
 
 rule index_vcf:
 	input:
-		path+"/Mutation_calling/{tumor_sample}/{chrname2}_Mutect2_output_filtered.vcf"
+		path+"/Mutation_calling/{tumor_sample}/Mutect2/{chrname2}_Mutect2_output_filtered.vcf"
 	output:
-		gz=path+"/Mutation_calling/{tumor_sample}/{chrname2}_Mutect2_output_filtered.vcf.gz",
-		tbi=path+"/Mutation_calling/{tumor_sample}/{chrname2}_Mutect2_output_filtered.vcf.gz.tbi"
+		gz=path+"/Mutation_calling/{tumor_sample}/Mutect2/{chrname2}_Mutect2_output_filtered.vcf.gz",
+		tbi=path+"/Mutation_calling/{tumor_sample}/Mutect2/{chrname2}_Mutect2_output_filtered.vcf.gz.tbi"
 	shell:
 		"export PERL5LIB=/tbi/software/x86_64/vcftools/vcftools-0.1.12b/el7/lib/perl5/site_perl/   ;\
 		export PATH=${{PATH}}:/home/f528r/tabix-0.2.6/ ;\
@@ -354,7 +354,7 @@ rule index_vcf:
 
 rule merge_vcf:
 	input:
-		expand(path+"/Mutation_calling/{{tumor_sample}}/{chrname2}_Mutect2_output_filtered.vcf.gz", chrname2=chrname2)
+		expand(path+"/Mutation_calling/{{tumor_sample}}/Mutect2/{chrname2}_Mutect2_output_filtered.vcf.gz", chrname2=chrname2)
 	output:
 		path+"/Mutation_calling/{tumor_sample}/Mutect2_output_filtered.vcf"
 	shell:
@@ -390,7 +390,7 @@ rule kb_interval:
   output:
     path+"/Mutation_calling/1kb_intervals/{tumor_sample}.tsv"
   shell:
-    "mkdir {input.path}/1kb_intervals ; grep PASS {input.vcf} | awk \'{{if (length($4)==1 && length($5)==1) print}}\' | awk \'{{ print $1\"\t\"$2\"\t\"$3\"\t\"$4\">\"$5\"\t.\t+\"}}\' > {input.path}/1kb_intervals/{wildcards.tumor_sample}_Mutect2_PASS.bed ; bedtools intersect -a {input.bed} -b {input.path}/1kb_intervals/{wildcards.tumor_sample}_Mutect2_PASS.bed -wa -c -loj > {input.path}/1kb_intervals/{wildcards.tumor_sample}_1kb_intervals_depth.txt ; cp {input.path}/1kb_intervals/{wildcards.tumor_sample}_1kb_intervals_depth.txt > {output}"
+    "mkdir -p {input.path}/1kb_intervals ; grep PASS {input.vcf} | awk \'{{if (length($4)==1 && length($5)==1) print}}\' | awk \'{{ print $1\"\\"$2\"\\"$3\"\\"$4\">\"$5\"\.\+\"}}\' > {input.path}/1kb_intervals/{wildcards.tumor_sample}_Mutect2_PASS.bed ; bedtools intersect -a {input.bed} -b {input.path}/1kb_intervals/{wildcards.tumor_sample}_Mutect2_PASS.bed -wa -c -loj > {input.path}/1kb_intervals/{wildcards.tumor_sample}_1kb_intervals_depth.txt ; cp {input.path}/1kb_intervals/{wildcards.tumor_sample}_1kb_intervals_depth.txt > {output}"
     
 rule Allelic_F:
   input:
@@ -399,6 +399,6 @@ rule Allelic_F:
   output:
     path+"/Mutation_calling/AF/{tumor_sample}.tsv"
   shell:    
-    " mkdir {input.path}/AF ; grep PASS {input.vcf} | awk \'{{if (length($4)==1 && length($5)==1) print}}\' | sed \'s/\t\.//g\' | cut -f 1,2,3,4,8 | sed \'s/\:/\t/g\' | awk \'{{ print $1\"\t\"$2\"\t\"$3\">\"$4\"\t\"$7 }}\' > {output} "
+    " mkdir -p {input.path}/AF ; grep PASS {input.vcf} | awk \'{{if (length($4)==1 && length($5)==1) print}}\' | sed \'s/\t\.//g\' | cut -f 1,2,3,4,8 | sed \'s/\:/\t/g\' | awk \'{{ print $1\"\\"$2\"\\"$3\">\"$4\"\\"$7 }}\' > {output} "
     
     
