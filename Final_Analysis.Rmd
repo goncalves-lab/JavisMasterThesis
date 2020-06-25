@@ -1,0 +1,64 @@
+---
+title: "Final Analysis"
+author: "Javier Botey"
+output:
+  html_document:
+    df_print: paged
+---
+
+Analysing allellic frequencies, mutational burden and signatures of VCFs resulting from WES data.
+All vcfs studied are variants filtered as "PASS" by Mutect2.
+
+```{r}
+library(SomaticSignatures)
+library(tidyverse)
+library(patchwork)
+library("vcfR")
+library("pinfsc50")
+library(data.table)
+```
+
+
+```{r}
+hgla_names <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/all/AF", pattern = ".tsv", full.names = FALSE) %>% gsub(".tsv", "", .)
+hgla_path <- "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/all/"
+mmus_names <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/all/AF", pattern = ".tsv", full.names = FALSE) %>% gsub(".tsv", "", .)
+mmus_path <- "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/all/"
+
+```
+
+
+```{r}
+AF_hgla <- lapply(hgla_names, function(x){
+  filename <- paste0(hgla_path,"AF/", x, ".tsv")
+  dat <- read.table(filename, header = FALSE, sep = "\t") %>% rename(., "CHROM"=V1, "POS"=V2, "SBS"=V3,"AF"=V4) %>% mutate(sample =x, species = "hgla") 
+})
+AF_mmus <- lapply(mmus_names, function(x){
+  filename <- paste0(mmus_path,"AF/", x, ".tsv")
+  dat <- read.table(filename, header = FALSE, sep = "\t") %>% rename(., "CHROM"=V1, "POS"=V2, "SBS"=V3,"AF"=V4) %>% mutate(sample =x, species = "mmus") 
+})
+AF_binded <- rbind(bind_rows(AF_hgla), bind_rows(AF_mmus))
+ggplot(AF_binded)+ geom_density(aes(x=AF, fill = species))+facet_wrap(species ~ sample, 
+                                                                      #facets = labeller(facet_names), 
+                                                                      scales = "free_y")
+```
+
+
+```{r}
+AF_list <- c(AF_hgla, AF_mmus)
+AF_df_experiment <- list()
+AF_df_experiment_sigs <- list()
+AF_df_experiment_sigs_binded <- list()
+AF_df_experiment_sigs_sliced <- list()
+for (f in c(0.05,0.1,0.3,0.5,1)){
+  AF_df_experiment[[as.character(f)]] <- lapply(AF_list, function(x){dat <- subset(x, AF < f)})
+  AF_df_experiment_sigs[[as.character(f)]] <- lapply(AF_df_experiment[[as.character(f)]], function(x){ dat <- data.frame("C>G"=sum(x$SBS == "C>G"| x$SBS == "G>C"), "C>T"=sum(x$SBS == "C>T"| x$SBS == "G>A"), "C>A"=sum(x$SBS == "C>A"| x$SBS == "G>A"), "T>G"=sum(x$SBS == "T>G"| x$SBS == "A>C"), "T>C"=sum(x$SBS == "T>C"| x$SBS == "A>G"), "T>A"=sum(x$SBS == "T>A"| x$SBS == "A>T"), "sample"=x$sample, species=x$species)})
+  AF_df_experiment_sigs_sliced[[as.character(f)]] <- lapply(AF_df_experiment_sigs[[as.character(f)]], function(x){slice(x, 1)})
+  AF_df_experiment_sigs_binded[[as.character(f)]] <- bind_rows(AF_df_experiment_sigs_sliced[[as.character(f)]])
+  AF_df_experiment_sigs_binded[[as.character(f)]]$thr <- as.character(f)
+}
+AF_df_experiment_sigs_binded_binded <- bind_rows(AF_df_experiment_sigs_binded) %>%  gather(key = "SBS", "value", C.G, C.T, C.A, T.G, T.C, T.A) 
+ggplot(AF_df_experiment_sigs_binded_binded, aes(x= thr, y=value, fill = SBS))+geom_col(position = "fill")+facet_wrap(species~sample)
+
+```
+
