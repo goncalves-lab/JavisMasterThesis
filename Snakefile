@@ -354,16 +354,17 @@ rule index_vcf:
 
 rule merge_vcf:
 	input:
-		expand(path+"/Mutation_calling/{{tumor_sample}}/Mutect2/{chrname2}_Mutect2_output_filtered.vcf.gz", chrname2=chrname2)
+		vcf=expand(path+"/Mutation_calling/{{tumor_sample}}/Mutect2/{chrname2}_Mutect2_output_filtered.vcf.gz", chrname2=chrname2),
+		path=path+"/Mutation_calling/{tumor_sample}/Mutect2/"
 	output:
 		path+"/Mutation_calling/{tumor_sample}/Mutect2_output_filtered.vcf"
 	shell:
 		" module load vcftools/default ;\
 		export PERL5LIB=/tbi/software/x86_64/vcftools/vcftools-0.1.12b/el7/lib/perl5/site_perl/   ;\
 		export PATH=${{PATH}}:/home/f528r/tabix-0.2.6/ ;\
-		  vcf-merge {input} > merged.vcf ;\
-		vcf-sort -c merged.vcf  > {output} ;\
-		rm merged.vcf "
+		  vcf-merge {input.vcf} > {input.path}/merged.vcf ;\
+		vcf-sort -c {input.path}/merged.vcf  > {output} ;\
+		rm {input.path}/merged.vcf "
 
 rule sort_vcf:
 	input:
@@ -385,20 +386,21 @@ rule pass_vcf:
 rule kb_interval:
   input:
     vcf=path+"/Mutation_calling/{tumor_sample}/Mutect2_output_filtered_sort.vcf",
-    path=path+"/Mutation_calling/",
+    path=path+"/Mutation_calling/{tumor_sample}",
     bed=kb_bed #I need the 1kb bed of mmus
   output:
-    path+"/Mutation_calling/1kb_intervals/{tumor_sample}.tsv"
+    tsv=path+"/Mutation_calling/1kb_intervals/{tumor_sample}.tsv",
+    bed=path+"/Mutation_calling/{tumor_sample}/1kb_intervals/Mutect2_PASS.bed"
   shell:
-    "mkdir -p {input.path}/1kb_intervals ; grep PASS {input.vcf} | awk \'{{if (length($4)==1 && length($5)==1) print}}\' | awk \'{{ print $1\"\\"$2\"\\"$3\"\\"$4\">\"$5\"\.\+\"}}\' > {input.path}/1kb_intervals/{wildcards.tumor_sample}_Mutect2_PASS.bed ; bedtools intersect -a {input.bed} -b {input.path}/1kb_intervals/{wildcards.tumor_sample}_Mutect2_PASS.bed -wa -c -loj > {input.path}/1kb_intervals/{wildcards.tumor_sample}_1kb_intervals_depth.txt ; cp {input.path}/1kb_intervals/{wildcards.tumor_sample}_1kb_intervals_depth.txt > {output}"
+    "module load bedtools; mkdir -p {input.path}/1kb_intervals ; grep PASS {input.vcf} | awk \'{{if (length($4)==1 && length($5)==1) print}}\' | awk \'{{ print $1\"\\t\"$2\"\\t\"$2\"\\t\"$4\">\"$5\"\\t.\\t+\"}}\' > {output.bed} ; bedtools intersect -a {input.bed} -b {output.bed} -wa -c -loj > {input.path}/1kb_intervals/1kb_intervals_depth.txt ; cp {input.path}/1kb_intervals/1kb_intervals_depth.txt  {output.tsv}"
     
 rule Allelic_F:
   input:
     vcf=path+"/Mutation_calling/{tumor_sample}/Mutect2_output_filtered_sort.vcf",
-    path=path+"/Mutation_calling/"
+    path=path+"/Mutation_calling/{tumor_sample}"
   output:
     path+"/Mutation_calling/AF/{tumor_sample}.tsv"
   shell:    
-    " mkdir -p {input.path}/AF ; grep PASS {input.vcf} | awk \'{{if (length($4)==1 && length($5)==1) print}}\' | sed \'s/\t\.//g\' | cut -f 1,2,3,4,8 | sed \'s/\:/\t/g\' | awk \'{{ print $1\"\\"$2\"\\"$3\">\"$4\"\\"$7 }}\' > {output} "
+    " mkdir -p {input.path}/AF ; grep PASS {input.vcf} | awk \'{{if (length($4)==1 && length($5)==1) print}}\' | sed \'s/\t\.//g\' | cut -f 1,2,3,4,8 | sed \'s/\:/\t/g\' | awk \'{{ print $1\"\t\"$2\"\t\"$3\">\"$4\"\t\"$7 }}\' > {output} "
     
     
