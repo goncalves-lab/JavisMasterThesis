@@ -25,7 +25,7 @@ if config["reference"] == "hgla":
   dict="/icgc/dkfzlsdf/analysis/B210/references_genome/Heterocephalus_glaber_female.HetGla_female_1.0.dna_rm.toplevel_short_ids.dict"
   chrname2=expand("{chr}", chr=glob_wildcards("/icgc/dkfzlsdf/analysis/B210/Javi/hgla/Reference/chr/split_H_{chr}.bed").chr )
   kb_bed= "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/Reference/NMR_1kb_intervals.bed"
-  chrpath="/icgc/dkfzlsdf/analysis/B210/Javi/hgla/Reference/chr"
+  chrpath="/icgc/dkfzlsdf/analysis/B210/Javi/hgla/Reference/chr/split_H_"
   config.update(read_config())
 elif config["reference"] == "mmus":
   ref_config="/icgc/dkfzlsdf/analysis/B210/Javi/mmus/Reference/reference-mmus.json"
@@ -48,7 +48,7 @@ path = str(full_path)+str(project)
 
 #The project folder needs to contain the following folders: fastq, alignment, QC, subsampling and mutational_analysis.
 #Inside the fastq folder, there are the fastq.gz we want to analyze. From this, we will extract the following wildcards.
-#The name of the fastq.gz I am using is the following: AS-475131_TUMOR-LR-2802_R1.fastq.gz
+#The name of the fastq.gz I am using is the following: AS-475131_TUMOR-LR-lane2_R1.fastq.gz
 
 #The full name of the sample, with the sample id and the lane id
 name_full = expand("{ID}",ID=glob_wildcards(str(path)+"/fastq/{id}_R2.fastq.gz").id )
@@ -76,7 +76,7 @@ GENOMEFILE =  os.path.join(config["referenceInfo"]["path"], config["referenceInf
 #As in every Snakemake, we need to set all the output files as inputs in rule all. To avoid the use of wildcards in the final rule of the file.
 rule all:
 	input:
-		#expand(path+"/fastq/{name}_R{number}.fastq", name = name_full, number = ["1", "2"]),
+		expand(path+"/fastq/{name}_R{number}.fastq", name = name_full, number = ["1", "2"]),
 		expand(path+"/fastq/{name_full}_R{number}_val_{number}.fq", number=["1","2"], name_full = name_full),
 		expand(path+"/alignment/{name_full}.bam", name_full = name_full),
 		expand(path+"/alignment/{name_full}_sort.bam", name_full = name_full),
@@ -101,25 +101,27 @@ rule all:
 
 
 #It is also needed to set the order of the rules.
-ruleorder: trim_galore > bwa_mem > samtools_sort > remove_duplicates > samtools_merge > samtools_index > depth_targets > depth_nontargets > calculateTargetSize > targets_coverageQC > coverageQC > rmdreport > samtools_subsample > add_readgroup_subsampled > samtools_index_subsampled > Mutect2 > filter_vcf > index_vcf > merge_vcf > sort_vcf > pass_vcf  > Allelic_F
+ruleorder: gzip > trim_galore > bwa_mem > samtools_sort > remove_duplicates > samtools_merge > samtools_index > depth_targets > depth_nontargets > calculateTargetSize > targets_coverageQC > coverageQC > rmdreport > samtools_subsample > add_readgroup_subsampled > samtools_index_subsampled > Mutect2 > filter_vcf > index_vcf > merge_vcf > sort_vcf > pass_vcf  > Allelic_F
 
-#rule gzip:
-#	input:
-#		path+"/fastq/{name_full}_R{number}.fastq.gz"
-#	output:
-#		path+"/fastq/{name_full}_R{number}.fastq"
-#	shell:
-#		"gzip -d {input} > {output}"
+
+rule gzip:
+	input:
+		path+"/fastq/{name_full}_R{number}.fastq.gz"
+	output:
+		path+"/fastq/{name_full}_R{number}.fastq"
+	shell:
+		"gzip -dcf {input} > {output}"
 
 rule trim_galore:
 	input:
 		r1=path+"/fastq/{name_full}_R1.fastq",
-		r2=path+"/fastq/{name_full}_R2.fastq"
+		r2=path+"/fastq/{name_full}_R2.fastq",
+		path=path
 	output:
 		path+"/fastq/{name_full}_R1_val_1.fq",
 		path+"/fastq/{name_full}_R2_val_2.fq",
 	shell:
-		"module load trim-galore/0.5.0 ; module load pypy/2.7-6.0.0 ; trim_galore  --output_dir {path}/fastq/  --paired {input.r1} {input.r2}  "
+		"module load trim-galore/0.5.0 ; module load pypy/2.7-6.0.0 ; trim_galore  --output_dir {input.path}/fastq/  --paired {input.r1} {input.r2}  "
 
 rule bwa_mem:
 	input:
@@ -330,7 +332,7 @@ rule Mutect2:
 	output:
 		path+"/Mutation_calling/{tumor_sample}/Mutect2/{chrname2}_Mutect2_output.vcf"
 	shell:
-		" mkdir -p {input.path}/{wildcards.tumor_sample}/Mutect2 ; module load gatk/4.0.9.0 ; module load samtools ;  gatk Mutect2 -L {input.chr}  -R  {input.ref}  -I {input.tumor}  -I {input.normal} -tumor TUMOR -normal NORMAL  -O {output} "
+		" mkdir -p {input.path}/{wildcards.tumor_sample}/Mutect2; module load gatk/4.0.9.0 ; module load samtools ;  gatk Mutect2 -L {input.chr}  -R  {input.ref}  -I {input.tumor}  -I {input.normal} -tumor TUMOR -normal NORMAL  -O {output} "
 
 rule filter_vcf:
 	input:
@@ -355,16 +357,16 @@ rule index_vcf:
 rule merge_vcf:
 	input:
 		vcf=expand(path+"/Mutation_calling/{{tumor_sample}}/Mutect2/{chrname2}_Mutect2_output_filtered.vcf.gz", chrname2=chrname2),
-		path=path+"/Mutation_calling/{tumor_sample}/Mutect2/"
+		path=path+"/Mutation_calling/"
 	output:
 		path+"/Mutation_calling/{tumor_sample}/Mutect2_output_filtered.vcf"
 	shell:
 		" module load vcftools/default ;\
 		export PERL5LIB=/tbi/software/x86_64/vcftools/vcftools-0.1.12b/el7/lib/perl5/site_perl/   ;\
 		export PATH=${{PATH}}:/home/f528r/tabix-0.2.6/ ;\
-		  vcf-merge {input.vcf} > {input.path}/merged.vcf ;\
-		vcf-sort -c {input.path}/merged.vcf  > {output} ;\
-		rm {input.path}/merged.vcf "
+		  vcf-merge {input.vcf} > {input.path}/{wildcards.tumor_sample}/Mutect2/merged.vcf ;\
+		vcf-sort -c {input.path}/{wildcards.tumor_sample}/Mutect2/merged.vcf  > {output} ;\
+		rm {input.path}/{wildcards.tumor_sample}/Mutect2/merged.vcf "
 
 rule sort_vcf:
 	input:
@@ -386,21 +388,21 @@ rule pass_vcf:
 rule kb_interval:
   input:
     vcf=path+"/Mutation_calling/{tumor_sample}/Mutect2_output_filtered_sort.vcf",
-    path=path+"/Mutation_calling/{tumor_sample}",
+    path=path+"/Mutation_calling",
     bed=kb_bed #I need the 1kb bed of mmus
   output:
     tsv=path+"/Mutation_calling/1kb_intervals/{tumor_sample}.tsv",
     bed=path+"/Mutation_calling/{tumor_sample}/1kb_intervals/Mutect2_PASS.bed"
   shell:
-    "module load bedtools; mkdir -p {input.path}/1kb_intervals ; grep PASS {input.vcf} | awk \'{{if (length($4)==1 && length($5)==1) print}}\' | awk \'{{ print $1\"\\t\"$2\"\\t\"$2\"\\t\"$4\">\"$5\"\\t.\\t+\"}}\' > {output.bed} ; bedtools intersect -a {input.bed} -b {output.bed} -wa -c -loj > {input.path}/1kb_intervals/1kb_intervals_depth.txt ; cp {input.path}/1kb_intervals/1kb_intervals_depth.txt  {output.tsv}"
+    "module load bedtools; mkdir -p {input.path}/{wildcards.tumor_sample}/1kb_intervals ; grep PASS {input.vcf} | awk \'{{if (length($4)==1 && length($5)==1) print}}\' | awk \'{{ print $1\"\\t\"$2\"\\t\"$2\"\\t\"$4\">\"$5\"\\t.\\t+\"}}\' > {output.bed} ; bedtools intersect -a {input.bed} -b {output.bed} -wa -c -loj > {input.path}/1kb_intervals/1kb_intervals_depth.txt ; cp {input.path}/1kb_intervals/1kb_intervals_depth.txt  {output.tsv}"
     
 rule Allelic_F:
   input:
     vcf=path+"/Mutation_calling/{tumor_sample}/Mutect2_output_filtered_sort.vcf",
-    path=path+"/Mutation_calling/{tumor_sample}"
+    path=path+"/Mutation_calling"
   output:
     path+"/Mutation_calling/AF/{tumor_sample}.tsv"
   shell:    
-    " mkdir -p {input.path}/AF ; grep PASS {input.vcf} | awk \'{{if (length($4)==1 && length($5)==1) print}}\' | sed \'s/\t\.//g\' | cut -f 1,2,3,4,8 | sed \'s/\:/\t/g\' | awk \'{{ print $1\"\t\"$2\"\t\"$3\">\"$4\"\t\"$7 }}\' > {output} "
+    " mkdir -p {input.path}/{wildcards.tumor_sample}/AF ; grep PASS {input.vcf} | awk \'{{if (length($4)==1 && length($5)==1) print}}\' | sed \'s/\t\.//g\' | cut -f 1,2,3,4,8 | sed \'s/\:/\t/g\' | awk \'{{ print $1\"\t\"$2\"\t\"$3\">\"$4\"\t\"$7 }}\' > {output} "
     
     
