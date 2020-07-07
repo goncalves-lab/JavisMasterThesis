@@ -1,6 +1,6 @@
 ---
 title: "WES coverage"
-author: "Fritjof Lammers"
+author: "Javier Botey with help from Fritjof Lammers"
 output:
   html_document:
     df_print: paged
@@ -19,7 +19,7 @@ library(kableExtra)
 ```
 
 ```{r definitions, echo=F}
-data.dir <- getwd()
+data.dir <- paste0(getwd(),"/")
 test.mode <- FALSE # testmode uses only a subset of the data
 ```
 
@@ -49,7 +49,7 @@ for (fname in flist) {
     next() # file is empty, skipping
   }
   df <- read.delim(gzfile(fname), header = T, comment.char = "", nrows = nrows)
-  df$sampleName <-  df$sampleName <- gsub("_(TUMOR|NORMAL).*", "", basename(fname)) 
+  df$sampleName <- gsub("_(TUMOR|NORMAL).*", "", basename(fname)) 
   # check if file is a "intergenic" bed file
   # those don't have region-fields because it is missing in the inital bed files
   # this is a stupid hack, but faster than rerunning the analysis
@@ -65,7 +65,7 @@ for (fname in flist) {
   } else {
     colnames(df) <- c("chrom","chromStart","chromEnd","region", "score", "strand", "readCount", "meanCoverage","sampleName")
   }
-  df %>%  select("chrom","chromStart","chromEnd","region", "readCount", "meanCoverage","sampleName") -> df
+  df %>%  dplyr::select("chrom","chromStart","chromEnd","region", "readCount", "meanCoverage","sampleName") -> df
   df$species = str_match(fname, "(hgla|mmus)")[[2]]
   df$fname <- fname
   df.all <- rbind(df.all, df)
@@ -89,7 +89,7 @@ readCoverageQC <- function(flist) {
       next() # file is empty, skipping
     }
     df <- read.delim(gzfile(fname), header = T, comment.char = "", nrows = nrows)
-    df$sampleName <-  df$sampleName <- gsub("_(TUMOR|NORMAL).*", "", basename(fname))
+    df$sampleName <- gsub("_(TUMOR|NORMAL).*", "", basename(fname))
     df$species = str_match(fname, "(hgla|mmus)")[[2]]
     df$fname <- fname
     if (length(df.all) == 0) {
@@ -116,8 +116,8 @@ df.all2 <- rbind(df.covQC, df.covQC_targets)
 ```{r estimate_otr, echo=F, fig.height=4, fig.width=8, eval=T}
  
 df.all2 %>% filter(interval == "all") %>%
-  select(sampleName,species,origin,X.QC.bases..total.not_N.bases) %>%
-  separate(X.QC.bases..total.not_N.bases, c("QC.bases", "genomelength"), sep = "/", convert = TRUE )%>% select(-matches("genomelength")) %>% 
+  dplyr::select(sampleName,species,origin,X.QC.bases..total.not_N.bases) %>%
+  separate(X.QC.bases..total.not_N.bases, c("QC.bases", "genomelength"), sep = "/", convert = TRUE )%>% dplyr::select(-matches("genomelength")) %>% 
   group_by(sampleName, species, origin) %>% spread(origin, QC.bases) %>% mutate(otr=target/all, targetCov = target/4.9e7, genomeCov=all/2.7e9) -> df.otr
 kable(df.otr, format="html", digits = 3) %>% kable_styling(bootstrap_options = "striped")
 #Now I have to divide all the coverages to the minimum one and get a number for every samples that should be samtools view -s 
@@ -126,7 +126,8 @@ kable(df.otr, format="html", digits = 3) %>% kable_styling(bootstrap_options = "
 
 ```{r}
 my.df <- data.frame(sample = df.otr$sampleName, coverage = df.otr$targetCov)
-my.df2 <- my.df %>% mutate(coverage= min(na.omit(my.df$coverage))/coverage) 
+#my.df2 <- my.df %>% mutate(coverage= min(na.omit(my.df$coverage))/coverage) #When the depth threshold is set to the minimum of the batch
+my.df2 <- my.df %>% mutate(coverage= 170/coverage) %>% mutate( coverage = pmin(.$coverage, 0.999999999999999)) #When the depth threshold is set to the be 170X
 write.table(na.omit(my.df2), file = "view_values.tsv", sep = "\t")
 ```
 ```{r plot_histo, echo=F, fig.height=3, fig.width=8, warning=F}
@@ -135,8 +136,27 @@ df.all %>%
   filter(region %in% c("target", "nontarget")) -> df.plot
   df.tmpl <- df.plot %>% subset(region == "target")
   df.tmpl$sampleName <- gsub("*.target.bed.gz", "" , df.tmpl$sampleName)
-  plot <- ggplot(df.tmpl) +
-    geom_violin(aes(x= sampleName, y=meanCoverage, fill=region))+coord_cartesian(ylim=c(0,600))+theme(axis.text.x = element_text(angle = 90, hjust = 1))
-  plot
-  
+
+violin_plot <- ggplot(df.tmpl) + geom_violin(aes(x= sampleName, y=meanCoverage, fill=region))+theme_minimal()+coord_cartesian(ylim = c(0, 1000))+theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+density_plot <- ggplot(df.tmpl) + geom_density(aes(x=meanCoverage, fill=region))+theme_minimal()+theme(axis.text.x = element_text(angle = 90, hjust = 1))+coord_cartesian(xlim=c(0,1000))+facet_wrap(~sampleName)
+
+otr_plot <- ggplot(df.otr)+geom_col(aes(x= sampleName, y= otr, fill= species))+theme_minimal()+theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+violin_plot
+density_plot
+otr_plot
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -4,7 +4,8 @@ library("pinfsc50")
 library(data.table)
 library(tidyverse)
 library("ggtext")
-samples_list <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/Final_analysis/AF", pattern = ".tsv")
+samples_list <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/Final_analysis/AF", pattern = ".tsv", full.names = T)
+#samples_list <- c(list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/all/AF/Treated", full.names = TRUE), list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/all/AF/Control", full.names = TRUE))
 path <- "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/Final_analysis"
 intervals <- list()
 scaffold <- list()
@@ -13,14 +14,9 @@ AF <- list()
 empty_AF <- list()
 scaffold_AF <- list()
 for (i in samples_list){
-  intervals[[i]]<- read.table(paste0(path,"/1kb_intervals/",i))
-  intervals[[i]]$sample <- i
-  scaffold[[i]] <- read.table(paste0(path,"/scaffolds/",i))
-  scaffold[[i]]$sample <- i
-  empty_scaffold[[i]] <- data.frame(Pos = scaffold[[i]]$V1, AF = 0)
-  AF[[i]] <- read.table(paste0(path,"/AF/",i))
-  AF[[i]]$sample <- i
-  AF[[i]]$state <- gsub("AS-4224[03,05,07,09,11]", "Treated" , AF[[i]]$sample) %>% gsub("AS-422415.tsv|AS-47513[1,3,5].tsv", "Untreated" , .)
+  AF[[i]] <- read.table(i)
+  AF[[i]]$sample <- gsub( "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/all/AF/(Control|Treated)/", "", i) %>% gsub(".tsv", "", . )
+  AF[[i]]$state <- gsub("AS-4224[03,05,07,09,11]", "Treated" , AF[[i]]$sample) %>% gsub("AS-422415|AS-47513[1,3,5]", "Untreated" , .)
   #empty_AF[[i]] <- data.frame(Pos = AF[[i]]$V1, AF = AF[[i]]$V4 )
   #scaffold_AF[[i]] <- rbind(empty_scaffold[[i]], empty_AF[[i]]) %>% .[order(.$Pos),]
   #scaffold_AF[[i]]$sample <- i
@@ -28,15 +24,15 @@ for (i in samples_list){
 theme_nothing <- theme(panel.background = element_blank(), panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))
 sample_new_names <- c("hgla_DT25_skin_T3_F7", "hgla_DT25_skin_T3_F8", "hgla_DT25_skin_T3_B2", "hgla_DT25_skin_T3_J4", "hgla_DT25_skin_T3_M11", "hgla_AC25_skin_C3_B2")
 #sample_labels <- paste(gsub(".tsv", "", samples_list),":", lapply(AF, nrow), "mutations") %>% set_names(. , samples_list)
-sample_labels <- paste(sample_new_names,":", lapply(AF, nrow), "mutations") %>% set_names(. , samples_list)
+sample_labels <- paste(sample_new_names,":", lapply(AF, nrow), "mutations") %>% set_names(. , gsub( "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/all/AF/(Control|Treated)/", "", samples_list) %>% gsub(".tsv", "", . ))
 
 
 #Alternative to all the loops
-samples_AF <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/17618/Mutation_calling/AF", pattern = ".tsv", full.names = TRUE)
+samples_AF <- c(list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/all/AF/Treated", full.names = TRUE), list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/all/AF/Control", full.names = TRUE))
 AF_list <- lapply(samples_AF, function(x){
-  dat <- read.table(x, header = FALSE, sep = "\t") %>% rename(., "CHROM"=V1, "POS"=V2, "SBS"=V3,"AF"=V4) %>% mutate(sample = gsub("/icgc/dkfzlsdf/analysis/B210/Javi/mmus/17618/Mutation_calling/AF/", "", x)) 
+  dat <- read.table(x, header = FALSE, sep = "\t") %>% dplyr::rename(., "CHROM"=V1, "POS"=V2, "SBS"=V3,"AF"=V4) %>% mutate(sample = gsub("/icgc/dkfzlsdf/analysis/B210/Javi/mmus/17618/Mutation_calling/AF/", "", x)) 
 })
-AF_df <- bind_rows(AF_list) %>% ggplot()+geom_density(aes(x=AF, fill=sample))+facet_wrap(~sample)+coord_cartesian(xlim=c(0,1))
+AF_df <- bind_rows(AF_list) %>% ggplot()+geom_density(aes(x=AF, fill=sample))+facet_wrap(~sample)+coord_cartesian(xlim=c(0,1))+theme(legend.position = 0)
 AF_df
 AF_df_experiment <- list()
 AF_df_experiment_sigs <- list()
@@ -67,8 +63,8 @@ plot_AF_scaffols <- bind_rows(scaffold_AF) %>% ggplot(aes(x=Pos, y=AF, fill = (s
 number_mutations <- data.frame(sample = as.vector(samples_list), n = as.vector(as.numeric(lapply(AF, nrow))) )
 ggplot(number_mutations, aes(x=sample, y=n, fill=sample))+geom_col()+theme_Pdro
 ggsave("Number_mutations.png")
-AF_binded <- bind_rows(AF) %>% rename("AF" = V4, "SBS" = V3, "CHROM" = V1, "POS" = V2)
-AF_binded %>% subset(sample == "AS-422403.tsv"| sample == "AS-422405.tsv"| sample == "AS-422407.tsv"| sample == "AS-422409.tsv"| sample == "AS-422411.tsv" | sample == "AS-422415.tsv") %>%   ggplot(aes(x=AF, fill = (sample == "AS-422415.tsv")))+geom_density()+facet_wrap(~ sample,  labeller = labeller(sample = sample_labels))+theme(legend.position = 0, panel.grid = element_blank(), panel.background = element_blank())+coord_cartesian(ylim = c(0,6))+xlab("Variant allelic frequency")
+AF_binded <- bind_rows(AF) %>% dplyr::rename("AF" = V4, "SBS" = V3, "CHROM" = V1, "POS" = V2)
+AF_binded %>% subset(grepl("AS-422", sample)) %>% ggplot(aes(x=AF, fill = (grepl("AS-422415", sample))))+geom_density()+coord_cartesian(xlim= c(0,1), ylim = c(0,30))+facet_wrap(~ sample,  labeller = labeller(sample = sample_labels))+theme(legend.position = 0, panel.grid = element_blank(), panel.background = element_blank())+xlab("Variant allelic frequency")
 
 AF_binded %>% subset(sample == "AS-422403.tsv"| sample == "AS-422405.tsv"| sample == "AS-422407.tsv"| sample == "AS-422409.tsv"| sample == "AS-422411.tsv") %>% ggplot(aes(x=V4, fill = "s"))+geom_density()+facet_wrap(~sample,  labeller = labeller(sample = sample_labels))+theme(legend.position = 0)+coord_cartesian(ylim = c(0,9))
 AF_binded %>% subset(sample == "AS-422415.tsv"| sample == "AS-475131.tsv"| sample == "AS-475133.tsv"| sample == "AS-475135.tsv") %>% ggplot(aes(x=V4, fill = (sample != "A")))+geom_density()+facet_wrap(~sample,  labeller = labeller(sample = sample_labels))+theme(legend.position = 0)+coord_cartesian(ylim = c(0,9))

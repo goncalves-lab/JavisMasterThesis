@@ -1,51 +1,94 @@
 ---
-title: "Final Analysis"
+title: "Whole exome sequencing analysis"
 author: "Javier Botey"
-output:
+output: 
   html_document:
     df_print: paged
 ---
 
-Analysing allellic frequencies, mutational burden and signatures of VCFs resulting from WES data.
-All vcfs studied are variants filtered as "PASS" by Mutect2.
-
-```{r}
+```{r load_deps, include=FALSE, warnings=FALSE}
 library(SomaticSignatures)
 library(tidyverse)
 library(patchwork)
 library("vcfR")
 library("pinfsc50")
 library(data.table)
+library(kableExtra)
+library(wesanderson)
+library("gprofiler2")
 ```
+Living beings are always subject to variation, and this can come in many different forms. One of them is the formation of genetic variants, which allows eukaryote organisms to evolve, but is also responsible for many diseases that we find in animals. Cancer, the disease to which the highest share of pharmaceutical budgets is destined, can be a result of the appearance of these variants. Variants, that we can also call mutations, appear in a cell in the organism and then either the cell or the variant can be removed, or it can result in a advantage of the cell, that will divide and form groups of mutated clones. If these clones resist the internal controls of homeostasis- contact inhibition, scarce of nutrients or the immune response- they can 'progress' into a malignancy that will cause a tumor and metastasize invading other tissues.
+This, cancer, is something habitual. Humans, mice, pigs and many other species suffer from it. All rodents suffer from it, all but one, the Naked mole rat. *Heterocephalus Glaber* is the scientific name for this animal that lives in Africa and that is commonly investigated to study the process of aging, in which only a handful of naturally occurring tumors have been found. The reason to which this species seems to be immune to cancer is an enigma. Some hypotheses are a difference in the composition of the extracellular matrix, that affects contact inhibition, or differences in the immune system. In this project, we are investigating whether this immunity resists the use of a commonly used carcinogen, a model for skin cancer. And by the exome analysis of the samples treated with this carcinogen, we aim to resolve if the variants that this carcinogen creates are present in the Naked mole rat and if they clonally expand in a similar manner that they do in mice.
 
-
-```{r}
-hgla_names <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/all/AF", pattern = ".tsv", full.names = FALSE) %>% gsub(".tsv", "", .)
+```{r reading_AF, echo=F }
+hgla_treated <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/all/AF/Treated", pattern = ".tsv", full.names = TRUE)
+hgla_control <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/all/AF/Control", pattern = ".tsv", full.names = TRUE) 
 hgla_path <- "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/all/"
-mmus_names <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/all/AF", pattern = ".tsv", full.names = FALSE) %>% gsub(".tsv", "", .)
+mmus_treated <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/all/AF/Treated", pattern = ".tsv", full.names = TRUE) 
+mmus_control <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/all/AF/Control", pattern = ".tsv", full.names = TRUE) 
 mmus_path <- "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/all/"
+all_list <- c(hgla_control, hgla_treated, mmus_control, mmus_treated)
+```
+
+#Somatic mutations
+
+We identify somatic mutations in Naked mole rat ans mouse skin samples with Mutect2, using liver samples as a way to identify germline mutations.
+
+Having a brief look, we can identify a different number of mutations in the two species in the control and treated group.
+
+```{r , echo=FALSE}
+AF_list <- lapply(all_list, function(x){
+  name <- gsub("/icgc/dkfzlsdf/analysis/B210/Javi/(hgla|mmus)/all/AF/(Control|Treated)/", "", x) %>% gsub(".tsv", "", .)
+  species <- gsub("/icgc/dkfzlsdf/analysis/B210/Javi/", "", x) %>% gsub("/all/AF/(Control|Treated)/", "", .) %>% gsub(paste0(name, ".tsv"), "", .) 
+  treatment <- gsub("/icgc/dkfzlsdf/analysis/B210/Javi/(hgla|mmus)/all/AF/", "", x) %>% gsub(paste0("/", name, ".tsv"), "", .)
+  path <- get(paste0(species, "_path"))
+  dat <- read.table(x, header = FALSE, sep = "\t") %>% dplyr::rename(., "CHROM"=V1, "POS"=V2, "SBS"=V3,"AF"=V4) %>% mutate(sample = name, species = species, treatment = treatment)
+})
+AF_binded <- bind_rows(AF_list) %>% subset((grepl("AS-42", .$sample) == FALSE))
+sample_names <- c("hgla_DT25_skin_T3_F7", "hgla_DT25_skin_T3_F8", "hgla_DT25_skin_T3_B2", "hgla_DT25_skin_T3_J4", "hgla_DT25_skin_T3_L11", "hgla_AC25_skin_C3_B2", "hgla_DT25_skin_T3_B7", "hgla_DT25_skin_T3_I8", "hgla_DT25_skin_T3_E2", "hgla_DT25_skin_T3_E8", "hgla_DT25_skin_T3_B8", "hgla_DT25_skin_T3_E7", "hgla_AC25_skin_C3_G8", "hgla_AC25_skin_C3_E9", "hgla_AC25_skin_C3_E8", "mmus_DT_skin_T1_B12", "mmus_DT_skin_T1_D2", "mmus_DT_skin_T1_H5", "mmus_DT_skin_T1_H12", "mmus_AC_skin_C1_G1")
+names(sample_names) <- c("AS-422403", "AS-422405", "AS-422407", "AS-422409", "AS-422411", "AS-422415", "AS-475119", "AS-475121", "AS-475123", "AS-475125", "AS-475127", "AS-475129", "AS-475131", "AS-475133", "AS-475135", "AS-452423", "AS-452425", "AS-452427", "AS-452429", "AS-452431")
+for (i in 1:length(sample_names)){AF_binded$sample <- gsub(names(sample_names)[i], sample_names[i], AF_binded$sample)}
+SBS_with_6 <- gsub("A>C", "T>G", AF_binded$SBS) %>% gsub("A>G", "T>C", .) %>% gsub("A>T", "T>A", .) %>% gsub("G>A", "C>T", .) %>% gsub("G>C", "C>G", .) %>% gsub("G>T", "C>A", .)
+AF_binded_6_SBS <- AF_binded %>% mutate(SBS = SBS_with_6)
+```
+
+```{r, echo=F}
+my_theme<- function (base_size = 11, base_family = "") 
+  {
+    theme_grey(base_size = base_size, base_family = base_family) %+replace% 
+      theme(axis.ticks = element_line(colour = "black"),
+            panel.grid.minor = element_blank(), 
+            panel.grid.major = element_blank(), 
+            panel.background = element_blank(),
+            panel.border = element_blank(),
+            axis.line	= element_line(colour = "black", size = 0.5),
+            axis.ticks.x = element_line(colour = "black", size = 0.5),
+            axis.text = element_text(size = rel(0.8), colour = "black"), 
+            strip.background = element_blank()
+      )
+}
+pal <- wes_palette("Royal2", 6, type = "continuous")
+pal2 <- wes_palette("Royal2", 2)
+
+```
+
+```{r, echo=F}
+ggplot((AF_binded_6_SBS %>% subset), aes(x=sample, fill = treatment))+geom_bar()+my_theme()+theme(axis.text.x = element_text(angle = 90))+facet_wrap(~ species, scales = "free_x")+scale_fill_manual(values = c(pal[3], pal[6]))+xlab("")+ylab("")
+```
+```{r, echo = F}
+ggplot(AF_binded_6_SBS, aes(x=sample, fill = SBS))+geom_bar(position = "fill")+my_theme()+theme(axis.text.x = element_text(angle = 90))+facet_wrap(species ~ treatment, scales = "free_x")+scale_fill_manual(values = pal)
+```
+
+
+
+```{r, echo = F}
+ggplot((AF_binded %>% subset(species == "hgla")))+ geom_density(aes(x=AF, fill = treatment))+facet_wrap(~ sample)+my_theme()+scale_fill_manual(values = c(pal[3], pal[6]))+coord_cartesian(ylim = c(0,30))
+ggplot((AF_binded %>% subset(species == "mmus")))+ geom_density(aes(x=AF, fill = treatment))+facet_wrap(~ sample)+my_theme()+scale_fill_manual(values = c(pal[3], pal[6]))+coord_cartesian(ylim = c(0,30))
 
 ```
 
 
-```{r}
-AF_hgla <- lapply(hgla_names, function(x){
-  filename <- paste0(hgla_path,"AF/", x, ".tsv")
-  dat <- read.table(filename, header = FALSE, sep = "\t") %>% rename(., "CHROM"=V1, "POS"=V2, "SBS"=V3,"AF"=V4) %>% mutate(sample =x, species = "hgla") 
-})
-AF_mmus <- lapply(mmus_names, function(x){
-  filename <- paste0(mmus_path,"AF/", x, ".tsv")
-  dat <- read.table(filename, header = FALSE, sep = "\t") %>% rename(., "CHROM"=V1, "POS"=V2, "SBS"=V3,"AF"=V4) %>% mutate(sample =x, species = "mmus") 
-})
-AF_binded <- rbind(bind_rows(AF_hgla), bind_rows(AF_mmus))
-ggplot(AF_binded)+ geom_density(aes(x=AF, fill = species))+facet_wrap(species ~ sample, 
-                                                                      #facets = labeller(facet_names), 
-                                                                      scales = "free_y")
-```
-
-
-```{r}
-AF_list <- c(AF_hgla, AF_mmus)
+```{r, echo = F}
 AF_df_experiment <- list()
 AF_df_experiment_sigs <- list()
 AF_df_experiment_sigs_binded <- list()
@@ -61,4 +104,183 @@ AF_df_experiment_sigs_binded_binded <- bind_rows(AF_df_experiment_sigs_binded) %
 ggplot(AF_df_experiment_sigs_binded_binded, aes(x= thr, y=value, fill = SBS))+geom_col(position = "fill")+facet_wrap(species~sample)
 
 ```
+
+```{r, echo = F}
+Treated_vcfs_hgla <- list.files(path=paste0(hgla_path,"vcf/Treated") , pattern = ".vcf", full.names = TRUE)
+Control_vcfs_hgla <- list.files(path=paste0(hgla_path, "vcf/Control") , pattern = ".vcf", full.names = TRUE)
+Treated_vcfs_mmus <- list.files(path=paste0(mmus_path, "vcf/Treated") , pattern = ".vcf", full.names = TRUE)
+Control_vcfs_mmus <- list.files(path=paste0(mmus_path, "vcf/Control") , pattern = ".vcf", full.names = TRUE)
+```
+
+```{r, echo=F}
+read.vcflist <- function(x){
+  a <- readVcfAsVRanges(x) 
+  b <- a[a@sampleNames == "TUMOR"] 
+  c <- b[nchar(b@ref) == 1 & nchar(b@alt) == 1]
+  c$sample <- gsub("/icgc/dkfzlsdf/analysis/B210/Javi/(hgla|mmus)/all/vcf/(Treated|Control)/", "", x) %>% gsub("(_pass|).vcf", "", .)
+  c$species <- x %>% gsub("/icgc/dkfzlsdf/analysis/B210/Javi/", "", .) %>% gsub("/all/vcf/(Treated|Control)/\\D+\\d+.vcf", "", .) %>% unique()
+  c$Treatment <- x %>% gsub("/icgc/dkfzlsdf/analysis/B210/Javi/(hgla|mmus)/all/vcf/", "", .) %>% gsub("/AS-\\d+.vcf", "", .) %>% unique()
+  print(paste(c[1,]$sample, "has" , sum(!is.na(c@ref)), "mutations"))
+  return(c)
+}
+```
+```{r, echo=F}
+Treated_Vranges_hgla <- lapply(Treated_vcfs_hgla, read.vcflist)
+Control_Vranges_hgla <- lapply(Control_vcfs_hgla, read.vcflist)
+Treated_Vranges_mmus <- lapply(Treated_vcfs_mmus, read.vcflist)
+Control_Vranges_mmus <- lapply(Control_vcfs_mmus, read.vcflist)
+```
+```{r, echo=F}
+hgla_dna <- FaFile("/icgc/dkfzlsdf/analysis/B210/references_genome/Heterocephalus_glaber_female.HetGla_female_1.0.dna_rm.toplevel_short_ids.fa")
+mmus_dna <- FaFile("/icgc/dkfzlsdf/analysis/B210/references_genome/Mus_musculus.GRCm38.dna_rm.toplevel_short_IDs.fa")
+contextmatrix <- function(x){
+  a <- mutationContext(x, ref = get(paste0(unique(x$species), "_dna")) ) %>% motifMatrix(group = "sample")
+  colnames(a) <- x$sample %>% unique()
+  b <- as.data.frame(a)
+  return(b)
+}
+contextdf <- function(x){
+  name <- deparse(substitute(x))
+  a <- lapply(x,contextmatrix) %>% do.call(cbind, .) %>% mutate(SBS = rownames(.)) %>% separate(SBS, into = c("SBS","ctxt"), sep = " ") %>% pivot_longer(., cols = grep("AS-", colnames(.)), names_to = "sample") %>% mutate(species = gsub("(Treated|Control)_Vranges_", "", name), Treatment = gsub("_Vranges_(hgla|mmus)", "", name))
+}
+Treated_ctxt_hgla <- contextdf(Treated_Vranges_hgla)
+Control_ctxt_hgla <- contextdf(Control_Vranges_hgla)
+Treated_ctxt_mmus <- contextdf(Treated_Vranges_mmus)
+Control_ctxt_mmus <- contextdf(Control_Vranges_mmus)
+
+```
+
+#Mutational signatures of the somatic SNVs found in the Naked mole rat and Mice
+
+DMBA-TPA, the two-step carcinogen used for our model, leaves a very specific SNV signature, the change from Thymine to Cytosine in the context of a 5' Cytosine and a 3' Guanine. Will this be in our mice and our naked mole rat?
+```{r, echo=F}
+SBS_96 <- rep(c("A.A", "A.C","A.G","A.T","C.A", "C.C","C.G","C.T","G.A", "G.C","G.G","G.T","T.A", "T.C","T.G","T.T"), 6)
+SBS_6 <- c(rep("C>A",16), rep("C>G",16),rep("C>T",16),rep("T>A",16),rep("T>C",16),rep("T>G",16))
+theme_BM <- function (base_size = 11, base_family = "") 
+  {
+    theme_grey(base_size = base_size, base_family = base_family) %+replace% 
+      theme(axis.ticks = element_line(colour = "black"),
+            panel.grid.minor = element_blank(), 
+            panel.grid.major = element_blank(), 
+            panel.backgroun = element_blank(), 
+            axis.line	= element_line(colour = "black", size = 0.5),
+            axis.ticks.x = element_line(colour = "black", size = 0.5),
+            axis.text = element_text(size = rel(0.8), colour = "black"), 
+            strip.background = element_blank())
+}
+Treated_ctxt_hgla_mean <- Treated_ctxt_hgla %>% subset(grepl("AS-47", sample)) %>% group_by(SBS, ctxt) %>% summarise(value = mean(value)) %>% mutate(species = "hgla", Treatment = "treated")
+Control_ctxt_hgla_mean <- Control_ctxt_hgla %>% subset(grepl("AS-47", sample))%>% group_by(SBS, ctxt) %>% summarise(value = mean(value))%>% mutate(species = "hgla", Treatment = "control")
+Treated_ctxt_mmus_mean <- Treated_ctxt_mmus %>% group_by(SBS, ctxt) %>% summarise(value = mean(value)) %>% mutate(species = "mmus", Treatment = "treated")
+Control_ctxt_mmus_mean <- Control_ctxt_mmus %>% group_by(SBS, ctxt) %>% summarise(value = mean(value)) %>% mutate(species = "mmus", Treatment = "control")
+Subtract_ctxt_hgla <- data.frame(SBS = Treated_ctxt_hgla_mean$SBS, ctxt = Treated_ctxt_hgla_mean$ctxt, value = Treated_ctxt_hgla_mean$value - Control_ctxt_hgla_mean$value) %>% mutate(species = "hgla", Treatment = "subtracted")
+Subtract_ctxt_mmus <- data.frame(SBS = Treated_ctxt_mmus_mean$SBS, ctxt = Treated_ctxt_mmus_mean$ctxt, value = Treated_ctxt_mmus_mean$value - Control_ctxt_mmus_mean$value) %>% mutate(species = "mmus", Treatment = "subtracted")
+
+all_ctxt_binded <- bind_rows(Treated_ctxt_hgla_mean, Treated_ctxt_mmus_mean, Control_ctxt_hgla_mean, Control_ctxt_mmus_mean, Subtract_ctxt_hgla, Subtract_ctxt_mmus)
+
+ctxt_plot <- function(x){ggplot(x , aes(x = ctxt, y = value , fill = SBS ))+geom_col()+facet_grid(species + Treatment~SBS)+theme_BM()+guides(fill = FALSE)+expand_limits(y = 0) +
+    theme(axis.title.y = element_blank(), 
+          axis.text.y = element_text(size = 8), axis.title.x = element_blank(), 
+          axis.text.x = element_text(size = 5, angle = 90, 
+                                     vjust = 0.4), strip.text.x = element_text(size = 9), 
+          strip.text.y = element_text(size = 9), panel.grid.major.x = element_blank(), 
+          panel.spacing.x = unit(0, "lines")) + 
+    ylab("Relative contribution") + xlab("96-trinucleotide context")}
+```
+```{r}
+hgla_ctxt_plot_T <- ctxt_plot(Treated_ctxt_hgla_mean)+scale_fill_brewer(palette="Set2")
+hgla_ctxt_plot_C <- ctxt_plot(Control_ctxt_hgla_mean)
+mmus_ctxt_plot_T <- ctxt_plot(Treated_ctxt_mmus_mean)
+mmus_ctxt_plot_C <- ctxt_plot(Control_ctxt_mmus_mean)
+hgla_ctxt_plot_S <- ctxt_plot(Subtract_ctxt_hgla)
+mmus_ctxt_plot_S <- ctxt_plot(Subtract_ctxt_mmus)
+
+hgla
+
+```
+
+
+#Location of the SNVs - Mutated genes
+
+```{r, echo=F}
+Treated_genes_mmus <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/all/genes/Treated/", pattern = "sliced.bed", full.names = TRUE)
+Control_genes_mmus <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/all/genes/Control/", pattern = "sliced.bed", full.names = TRUE)
+Treated_genes_hgla <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/all/genes/Treated/", pattern = "sliced.bed", full.names = TRUE)
+Control_genes_hgla <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/all/genes/Control/", pattern = "sliced.bed", full.names = TRUE)
+
+mutated_genes_mmus <- lapply(c(Treated_genes_mmus, Control_genes_mmus), function(x){
+  a<- read.table(x,header = FALSE, sep="\t",stringsAsFactors=FALSE, quote="")
+  a$species <- "mmus"
+  a$treatment <- gsub("/icgc/dkfzlsdf/analysis/B210/Javi/mmus/all/genes/", "", x) %>% gsub("//AS-\\d+_\\D+.bed", "", .)
+  a$sample <- gsub("/icgc/dkfzlsdf/analysis/B210/Javi/mmus/all/genes/(Treated|Control)//", "", x) %>% gsub("_sliced.bed", "", .)
+  colnames <- c("gene_id", "gene_version", "transcript_id", "transcript_version", "exon_number", "gene_name")
+  a$V11 <- gsub("gene_id ", "", a$V11) %>% gsub("\"", "", .) %>% gsub(";", "", .) %>% gsub(" ", "", .)
+  a$V12 <- gsub("gene_name ", "", a$V12) %>% gsub("\"", "", .) %>% gsub(";", "", .) %>% gsub(" ", "", .)
+  print(x)
+  b <- a %>% dplyr::rename("Chromosome" = V1, "Position" = V2, "Ref" = V4, "Alt" = V5, "frame" = V10, "Strand" = V9, "region" = V6, "gene_name" = V12, "gene_id" = V11) %>% dplyr::select("Chromosome", "Position", "Ref", "Alt", "frame","gene_name" , "gene_id", "Strand", "region", "treatment", "sample")
+  return(b)
+  })
+mutated_genes_mmus_binded <- bind_rows(mutated_genes_mmus)
+mutated_genes_mmus_binded_exon <- subset(mutated_genes_mmus_binded, region == "exon") %>% unique()
+```
+```{r, echo=F}
+mutated_genes_hgla <- lapply(c(Treated_genes_hgla, Control_genes_hgla), function(x){
+  a<- read.table(x,header = FALSE, sep="\t",stringsAsFactors=FALSE, quote="")
+  a$species <- "hgla"
+  a$treatment <- gsub("/icgc/dkfzlsdf/analysis/B210/Javi/hgla/all/genes/", "", x) %>% gsub("//AS-\\d+_\\D+.bed", "", .)
+  a$sample <- gsub("/icgc/dkfzlsdf/analysis/B210/Javi/hgla/all/genes/(Treated|Control)//", "", x) %>% gsub("_sliced.bed", "", .)
+  colnames <- c("gene_id", "gene_version", "transcript_id", "transcript_version", "exon_number", "gene_name")
+  a$V11 <- gsub("gene_id ", "", a$V11) %>% gsub("\"", "", .) %>% gsub(";", "", .) %>% gsub(" ", "", .)
+  a$V12 <- gsub("gene_name ", "", a$V12) %>% gsub("\"", "", .) %>% gsub(";", "", .) %>% gsub(" ", "", .)
+  print(x)
+  b <- a %>% dplyr::rename("Chromosome" = V1, "Position" = V2, "Ref" = V4, "Alt" = V5, "frame" = V10, "Strand" = V9, "region" = V6, "gene_name" = V12, "gene_id" = V11) %>% dplyr::select("Chromosome", "Position", "Ref", "Alt", "frame","gene_name" , "gene_id", "Strand", "region", "treatment", "sample")
+  return(b)
+  })
+mutated_genes_hgla_binded <- bind_rows(mutated_genes_hgla)
+#With this I am removing the first batch
+#mutated_genes_hgla_binded <- subset(mutated_genes_hgla_binded, (grepl("AS-422", mutated_genes_hgla_binded$sample) == FALSE))
+mutated_genes_hgla_binded_exon <- subset(mutated_genes_hgla_binded, region == "exon") %>% unique()
+```
+
+
+#Ras-related mutated genes
+We find mutated genes in exonic regions that are from the "ras" family (or at least they have ras in their gene names)
+
+```{r, echo=F}
+ras_mmus <- mutated_genes_mmus_binded_exon %>% subset(grepl("ras",gene_name, ignore.case = TRUE))
+kable(ras_mmus, format="html") %>% kable_styling(bootstrap_options = "striped")
+ras_hgla <- mutated_genes_hgla_binded_exon %>% subset(grepl("ras",gene_name, ignore.case = TRUE))
+kable(ras_hgla, format="html") %>% kable_styling(bootstrap_options = "striped")
+
+```
+
+#Strand bias
+Transcription coupled repair mechanisms lead to what is called "Strand bias", which is the fact that mutations more commonly appear in the untranscribed strand (here, strand "-") , as they are repaired in the transcribed strand (here, strand "+")
+
+```{r, echo=F}
+ggplot(mutated_genes_mmus_binded_exon, aes(x=sample, fill = Strand))+geom_bar(position = "dodge")+facet_grid(~treatment, scales = "free_x")+ggtitle("Strand bias mmus")
+ggplot(mutated_genes_hgla_binded_exon, aes(x=sample, fill = Strand))+geom_bar(position = "dodge")+facet_grid(~treatment, scales = "free_x")+ggtitle("Strand bias hgla")
+```
+
+
+```{r, echo=F}
+ggplot(mutated_genes_mmus_binded, aes(x= sample, fill = region))+geom_bar(position = "fill")+ggtitle("mmus regions")
+ggplot(mutated_genes_hgla_binded, aes(x= sample, fill = region))+geom_bar(position = "fill")+ggtitle("hgla regions")
+
+ggplot(mutated_genes_mmus_binded_exon, aes(x= gene_name, fill = sample))+geom_bar()+theme(axis.text.x = element_text(size = 1, angle = 90, vjust = 0.4))
+
+mutated_genes_mmus_treatment_sort <- sort((table(mutated_genes_mmus_binded_exon %>% subset(treatment = "Treated") %>% .$gene_name)), decreasing = TRUE) %>% as.data.frame() %>% .[(1:20),]
+mutated_genes_mmus_binded_exon_treated <- subset(mutated_genes_mmus_binded_exon, treatment = "Treated")
+mutated_genes_hgla_binded_exon_treated <- subset(mutated_genes_hgla_binded_exon, treatment = "Treated")
+
+gost_genes_mmus <- gost(gsub(" ", "", mutated_genes_mmus_binded_exon_treated$gene_id), organism = "mmusculus" )
+gostplot(gost_genes_mmus, interactive = TRUE)
+
+gost_genes_hgla <- gost(mutated_genes_hgla_binded_exon_treated$gene_id, organism = "hgfemale" )
+gostplot(gost_genes_hgla, interactive = TRUE)
+```
+
+
+
+
+
 

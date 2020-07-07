@@ -63,8 +63,7 @@ tumor_sample = expand("{ID}",ID=glob_wildcards(str(path)+"/fastq/{id}_TUMOR-LR-{
 lane = expand("{ID}",ID=glob_wildcards(str(path)+"/fastq/{other}-LR-{id}_R2.fastq.gz").id )
 #Get only unique values for the lane names
 name_lane=list(set(lane))
-normal_sample = expand("{ID}",ID=glob_wildcards(str(path)+"/fastq/{id}_NORMAL-LR-"+str(name_lane[1])+"_R2.fastq.gz").id )
-normal_sample = str(normal_sample).strip('[]').strip("''")
+normal_sample = expand("{ID}",ID=glob_wildcards(str(path)+"/fastq/{id}_NORMAL-LR-{other}_R2.fastq.gz").id )
 
 #Now we will extract information from the config file of the location of the target files for the depth calculation
 TARGET_BED = os.path.join(config["referenceInfo"]["path"], config["annotation"]["wesTargetFile"])
@@ -323,9 +322,9 @@ rule samtools_index_subsampled:
 rule Mutect2:
 	input:
 		tumor=path+"/subsampling/{tumor_sample}_TUMOR_merged_subsampled_RG_LG.bam",
-		normal=path+"/subsampling/"+normal_sample+"_NORMAL_merged_subsampled_RG_LG.bam",
+		normal=expand(path+"/subsampling/{normal_sample}_NORMAL_merged_subsampled_RG_LG.bam", normal_sample = normal_sample) ,
 		ind_tumor=path+"/subsampling/{tumor_sample}_TUMOR_merged_subsampled_RG_LG.bam.bai",
-		ind_normal=path+"/subsampling/"+normal_sample+"_NORMAL_merged_subsampled_RG_LG.bam.bai",
+		ind_normal=expand(path+"/subsampling/{normal_sample}_NORMAL_merged_subsampled_RG_LG.bam.bai", normal_sample = normal_sample ) ,
 		ref=genome,
 		chr=chrpath+"{chrname2}.bed",
 		path=path+"/Mutation_calling"
