@@ -78,17 +78,17 @@ rule all:
 		expand(path+"/fastq/{name}_R{number}.fastq", name = name_full, number = ["1", "2"]),
 		expand(path+"/fastq/{name_full}_R{number}_val_{number}.fq", number=["1","2"], name_full = name_full),
 		expand(path+"/alignment/{name_full}.bam", name_full = name_full),
-		expand(path+"/alignment/{name_full}_sort.bam", name_full = name_full),
-		expand(path+"/alignment/{name_full}_no_dupl_sort.bam", name_full = name_full),
+		expand(path+"/alignment/{name_sample}_sort.bam", name_sample = name_sample),
+		expand(path+"/alignment/{name_sample}_no_dupl_sort.bam", name_sample = name_sample),
 		expand(path+"/alignment/{name_sample}_merged.bam", name_sample = name_sample),
-		expand(path+"/alignment/{name_sample}_merged.bam.bai", name_sample = name_sample),
+		expand(path+"/alignment/{name_sample}_no_dupl_sort.bam.bai", name_sample = name_sample),
 		expand(path+"/QC/{name_sample}.{region}.bed.gz", name_sample=name_sample, region=["target", "nontarget"]),
 		expand(path+"/QC/{name_sample}.targets_coverageQC.tsv", name_sample=name_sample),
 		expand(path+"/QC/{name_sample}.coverageQC.tsv", name_sample=name_sample),
 		path+"/QC/qc-targetcoverage.html",
-		expand(path+"/subsampling/{name_sample}_merged_subsampled.bam", name_sample = name_sample),
-		expand(path+"/subsampling/{name_sample}_merged_subsampled_RG_LG.bam", name_sample = name_sample),
-		expand(path+"/subsampling/{name_sample}_merged_subsampled_RG_LG.bam.bai", name_sample = name_sample),
+		expand(path+"/subsampling/{name_sample}_subsampled.bam", name_sample = name_sample),
+		expand(path+"/subsampling/{name_sample}_subsampled_RG_LG.bam", name_sample = name_sample),
+		expand(path+"/subsampling/{name_sample}_subsampled_RG_LG.bam.bai", name_sample = name_sample),
 		expand(path+"/Mutation_calling/{tumor_sample}/Mutect2/{chrname2}_Mutect2_output.vcf", tumor_sample = tumor_sample, chrname2 = chrname2),
 		expand(path+"/Mutation_calling/{tumor_sample}/Mutect2/{chrname2}_Mutect2_output_filtered.vcf", tumor_sample = tumor_sample, chrname2 = chrname2),
 		expand(path+"/Mutation_calling/{tumor_sample}/Mutect2/{chrname2}_Mutect2_output_filtered.vcf.gz", tumor_sample = tumor_sample, chrname2 = chrname2),
@@ -100,7 +100,7 @@ rule all:
 
 
 #It is also needed to set the order of the rules.
-ruleorder: gzip > trim_galore > bwa_mem > samtools_sort > remove_duplicates > samtools_merge > samtools_index > depth_targets > depth_nontargets > calculateTargetSize > targets_coverageQC > coverageQC > rmdreport > samtools_subsample > add_readgroup_subsampled > samtools_index_subsampled > Mutect2 > filter_vcf > index_vcf > merge_vcf > sort_vcf > pass_vcf  > Allelic_F
+ruleorder: gzip > trim_galore > bwa_mem > samtools_merge > samtools_sort > remove_duplicates > samtools_index > depth_targets > depth_nontargets > calculateTargetSize > targets_coverageQC > coverageQC > rmdreport > samtools_subsample > add_readgroup_subsampled > samtools_index_subsampled > Mutect2 > filter_vcf > index_vcf > merge_vcf > sort_vcf > pass_vcf  > Allelic_F
 
 
 rule gzip:
@@ -134,38 +134,38 @@ rule bwa_mem:
 		module load bwa  ; \
 		bwa mem -t {threads} {input.Genome} {input.R1} {input.R2} | samtools view -h -b  > {output} "
 
+rule samtools_merge:
+        input:
+              	expand(path+"/alignment/{{name_sample}}-LR-{name_lane}.bam", name_lane = name_lane)
+        output:
+               	path+"/alignment/{name_sample}_merged.bam"
+        shell:	
+		"module load samtools/default ; samtools merge  {output} {input} "
+ 
 rule samtools_sort:
 	input:
-		path+"/alignment/{name_full}.bam"
+		path+"/alignment/{name_sample}_merged.bam"
 	output:
-		path+"/alignment/{name_full}_sort.bam"
+		path+"/alignment/{name_sample}_sort.bam"
 	shell:
 		"module load samtools/default ; samtools sort  -O BAM {input} > {output} "
 
 
 rule remove_duplicates:
 	input:
-		path+"/alignment/{name_full}_sort.bam"
+		path+"/alignment/{name_sample}_sort.bam"
 	output:
-		outbam=path+"/alignment/{name_full}_no_dupl_sort.bam",
-		metrics=path+"/alignment/{name_full}_dupl_metrics.txt"
+		outbam=path+"/alignment/{name_sample}_no_dupl_sort.bam",
+		metrics=path+"/alignment/{name_sample}_dupl_metrics.txt"
 	shell:
 		"module load gatk/4.0.9.0 ; gatk MarkDuplicates -I {input}  -O {output.outbam} -M {output.metrics}  --REMOVE_DUPLICATES=true --TMP_DIR {path}"
 
 
-rule samtools_merge:
-	input:
-		expand(path+"/alignment/{{name_sample}}-LR-{name_lane}_no_dupl_sort.bam", name_lane = name_lane)
-	output:
-		path+"/alignment/{name_sample}_merged.bam"
-	shell:
-		"module load samtools/default ; samtools merge  {output} {input} "
-
 rule samtools_index:
 	input:
-		path+"/alignment/{name_sample}_merged.bam"
+		path+"/alignment/{name_sample}_no_dupl_sort.bam"
 	output:
-		path+"/alignment/{name_sample}_merged.bam.bai"
+		path+"/alignment/{name_sample}_no_dupl_sort.bam.bai"
 
 	shell:
 		"module load samtools; samtools index {input}"
@@ -200,8 +200,8 @@ rule nontargets:
 
 rule depth_targets:
 	input:
-		bam = path+"/alignment/{name_sample}_merged.bam",
-		bai=path+"/alignment/{name_sample}_merged.bam.bai",
+		bam = path+"/alignment/{name_sample}_no_dupl_sort.bam",
+		bai=path+"/alignment/{name_sample}_no_dupl_sort.bam.bai",
 		targets = TARGET_BED_SORTED
 
 	params:
@@ -215,8 +215,8 @@ rule depth_targets:
 
 rule depth_nontargets:
 	input:
-		bam = path+"/alignment/{name_sample}_merged.bam",
-		bai=path+"/alignment/{name_sample}_merged.bam.bai",
+		bam = path+"/alignment/{name_sample}_no_dupl_sort.bam",
+		bai=path+"/alignment/{name_sample}_no_dupl_sort.bam.bai",
 		targets = NONTARGET_BED
 
 	params:
@@ -238,8 +238,8 @@ rule calculateTargetSize:
 
 rule targets_coverageQC:
 	input:
-		bam=path+"/alignment/{name_sample}_merged.bam",
-		bai=path+"/alignment/{name_sample}_merged.bam.bai",
+		bam=path+"/alignment/{name_sample}_no_dupl_sort.bam",
+		bai=path+"/alignment/{name_sample}_no_dupl_sort.bam.bai",
 		targets = TARGET_BED_SORTED
 	params:
 		threads = 4,
@@ -260,7 +260,7 @@ rule targets_coverageQC:
 
 rule coverageQC:
 	input:
-		path+"/alignment/{name_sample}_merged.bam"
+		path+"/alignment/{name_sample}_no_dupl_sort.bam"
 	params:
 		threads = 4,
 		COVERAGEQC_BINARY="/tbi/software/x86_64/otp/roddy/plugins/3.5/AlignmentAndQCWorkflows_1.2.73-1/resources/analysisTools/qcPipelineTools/coverageQcD/coverageQc",
@@ -293,38 +293,38 @@ rule rmdreport:
 
 rule samtools_subsample:
 	input:
-		bam = path+"/alignment/{name_sample}_merged.bam",
+		bam = path+"/alignment/{name_sample}_no_dupl_sort.bam",
 		view_values = path+"/QC/view_values.tsv"
 	output:
-		path+"/subsampling/{name_sample}_merged_subsampled.bam"
+		path+"/subsampling/{name_sample}__subsampled.bam"
 	shell:
 		" module load samtools/1.10; i=$( echo {input.bam} | sed \"s/AS/%AS/\" |  cut -f 2 -d \"%\" | cut -f 1 -d \"_\"  ) ; value=$( grep $i {input.view_values} | cut -f 3 | sort | uniq ) ; samtools view -hbs $value {input.bam} > {output} "
 
 rule add_readgroup_subsampled:
 	input:
-		bam = path+"/subsampling/{name_sample}_merged_subsampled.bam",
+		bam = path+"/subsampling/{name_sample}_subsampled.bam",
 		snakedata = path+"/fastq/snakedata.tsv" #You can find it at /icgc/dkfzlsdf/midterm/THEPROJECTNUMBER/data/RUNNUMBER (/icgc/dkfzlsdf/midterm/018431/data/200520_A0032..)
 	output:
-		path+"/subsampling/{name_sample}_merged_subsampled_RG_LG.bam"
+		path+"/subsampling/{name_sample}_subsampled_RG_LG.bam"
 	shell:
 		'module load gatk/4.0.9.0 ; i=$( echo {input.bam} | sed \"s/AS/%AS/\" |  cut -f 2 -d \"%\" | cut -f 2 -d \"_\"  )  ; \
 		gatk AddOrReplaceReadGroups  -ID ID  -PL Illumina -LB  ID   -PU ID  -SM $i  -I  {input.bam} -O  {output} '
 
 rule samtools_index_subsampled:
 	input:
-		path+"/subsampling/{name_sample}_merged_subsampled_RG_LG.bam"
+		path+"/subsampling/{name_sample}_subsampled_RG_LG.bam"
 	output:
-		path+"/subsampling/{name_sample}_merged_subsampled_RG_LG.bam.bai"
+		path+"/subsampling/{name_sample}_subsampled_RG_LG.bam.bai"
 
 	shell:
 		"module load samtools; samtools index {input}"
 
 rule Mutect2:
 	input:
-		tumor=path+"/subsampling/{tumor_sample}_TUMOR_merged_subsampled_RG_LG.bam",
-		normal=expand(path+"/subsampling/{normal_sample}_NORMAL_merged_subsampled_RG_LG.bam", normal_sample = normal_sample) ,
-		ind_tumor=path+"/subsampling/{tumor_sample}_TUMOR_merged_subsampled_RG_LG.bam.bai",
-		ind_normal=expand(path+"/subsampling/{normal_sample}_NORMAL_merged_subsampled_RG_LG.bam.bai", normal_sample = normal_sample ) ,
+		tumor=path+"/subsampling/{tumor_sample}_TUMOR_subsampled_RG_LG.bam",
+		normal=expand(path+"/subsampling/{normal_sample}_NORMAL_subsampled_RG_LG.bam", normal_sample = normal_sample) ,
+		ind_tumor=path+"/subsampling/{tumor_sample}_TUMOR_subsampled_RG_LG.bam.bai",
+		ind_normal=expand(path+"/subsampling/{normal_sample}_NORMAL_subsampled_RG_LG.bam.bai", normal_sample = normal_sample ) ,
 		ref=genome,
 		chr=chrpath+"{chrname2}.bed",
 		path=path+"/Mutation_calling"
