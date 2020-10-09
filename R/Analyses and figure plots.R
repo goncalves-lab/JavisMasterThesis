@@ -10,39 +10,99 @@
 # nonsynonymous mutant clones.                 # 
 ################################################
 
-sapply(list.files('/icgc/dkfzlsdf/analysis/B210/Javi/code/SkinCancerEvolution/wes/R/Functions', full.names = T), source)
 
-hgla_treated <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/Treated/full_depth/Mutation_calling/AF", pattern = ".tsv", full.names = TRUE)
-hgla_control <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/Control/full_depth/Mutation_calling/AF", pattern = ".tsv", full.names = TRUE) 
+### Firstly, all the functions developed for the analysis are loaded from the github repo
+
+download.file("https://github.com/JaviBotey/MasterThesis/archive/master.zip", destfile = "Rfunctions.zip")
+unzip("Rfunctions.zip")
+sapply(list.files("MasterThesis-master/R/Functions/"), source)
+
+### The first analyses are about the numbers. Number of mutations, mutational burden, variant allelic frequency distribution.
+### Therefore, I used the subsampled version for those analyses. 
+### Using a table that is the final output of the Somatic variant calling pipeline (github.com/JaviBotey/MasterThesis/Somatic Variant Calling Pipeline/Snakefile)
+
+hgla_treated <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/Treated/100X/Mutation_calling/AF", pattern = ".tsv", full.names = TRUE)
+hgla_control <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/Control/100X/Mutation_calling/AF", pattern = ".tsv", full.names = TRUE) 
 mmus_treated <-  list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/Treated_100X/Mutation_calling/AF", pattern = ".tsv", full.names = TRUE)
 mmus_control <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/Control_100X/Mutation_calling/AF", pattern = ".tsv", full.names = TRUE) 
-mmus_control <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/17618/Mutation_calling/AF", pattern = "G1", full.names = TRUE)
-mmus_treated <-  list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/17618/Mutation_calling/AF", pattern = "B12|D2|H12|H5", full.names = TRUE)
 
-
-
-hgla_treated_vcf <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/Treated/full_depth/Mutation_calling", pattern = "pass.vcf", full.names = TRUE, recursive = T)
-hgla_control_vcf <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/Control/full_depth/Mutation_calling", pattern = "pass.vcf", full.names = TRUE, recursive = T) 
-mmus_vcf <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/17618/Mutation_calling", pattern = "pass.vcf", full.names = TRUE, recursive = T) 
-mmus_treated_vcf <- mmus_vcf[1:4]
-mmus_control_vcf <- mmus_vcf[5]
-
-mmus_MEF_treated <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/MEF-all/Control-1_is_the_normal/AF", pattern = "a.tsv",  full.names = TRUE, recursive = T)
-mmus_MEF_control <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/MEF-all/Control-1_is_the_normal/AF", pattern = "o.tsv",  full.names = TRUE, recursive = T)
-mmus_MEF_vcf <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/MEF-all/PON", pattern = "pass2.vcf",  full.names = TRUE, recursive = T)
-mmus_MEF_treated_vcf <- mmus_MEF_vcf[c(1,2,3)]
-mmus_MEF_control_vcf <- mmus_MEF_vcf[c(3,5)]
-
-hgla_F_treated <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/ispr07/3o_is_the_normal/AF", pattern = "a.tsv",  full.names = TRUE, recursive = T)
-hgla_F_control <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/ispr07/3o_is_the_normal/AF", pattern = "o.tsv",  full.names = TRUE, recursive = T)
-hgla_F_vcf <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/ispr07/3o_is_the_normal", pattern = "pass.vcf",  full.names = TRUE, recursive = T)
-hgla_F_control_vcf <- hgla_F_vcf[grepl("o/pass", hgla_F_vcf)]
-hgla_F_treated_vcf <- hgla_F_vcf[grepl("a/pass", hgla_F_vcf)]
-
+### The genome of both species in the form of a FaFile is needed for obtaining the mutational context.
 hgla_dna <- FaFile("/icgc/dkfzlsdf/analysis/B210/references_genome/Heterocephalus_glaber_female.HetGla_female_1.0.dna_rm.toplevel_short_ids.fa")
 mmus_dna <- FaFile("/icgc/dkfzlsdf/analysis/B210/references_genome/Mus_musculus.GRCm38.dna_rm.toplevel_short_IDs.fa")
 
+### The same way of reading is used for all the samples.
 
+AF<- list()
+VR <- list()
+CTXT <- list()
+mutations <- list()
+for (i in c( "hgla_treated", "hgla_control", "mmus_control", "mmus_treated")){
+  species <- str_match(i, "mmus|hgla")
+  treatment <- gsub("(hgla|mmus)_", "", i)
+  AF[[i]] <- lapply(get(i), readAF, species = species, treatment = treatment, input = "AF") #The function readAF to read the table
+  mutations[[i]] <- lapply(AF[[i]], function(x){ #A variation of the table called "mutations" is also obtain with the format needed for dndscv
+      a <- x %>% unite("sampleID_treatment", c("sampleID", "treatment"), sep = "_")
+      dplyr::select(a, c("sampleID_treatment", "chr", "pos", "ref", "alt"))}
+      )
+    VR[[i]] <- lapply(AF[[i]], function(x){ #Tables are transformed to a VRanges object, necessary for SomaticSignatures mutational context function
+      a <- AFtoVranges(x) 
+      b <- mutationDistance(a)
+      a@elementMetadata@listData[["distance"]] <- b@elementMetadata@listData[["distance"]]
+      return(a)
+      })
+    CTXT[[i]] <- lapply(VR[[i]], contextmatrix, species = species, treatment = treatment) # And a context matrix is obtained for each sample
+}
+
+AF_b <- bind_rows(AF) # All samples are binded into a data set of AF, contexts
+CTXT_b <- bind_rows(CTXT)
+CTXT_b_mean <- meanContext(CTXT_b) # The mean context for each species and treatment is obtained with this function and a subtracted average context
+
+
+#Figure 1. Mutational rate, a boxplot
+
+hgla_exome <- 62083075
+mmus_exome <- 49370117
+
+AF_b %>% group_by(species,treatment, sampleID) %>% summarise(n=n()) %>% 
+  group_by(species,treatment) %>% mutate(mean=mean(n), sd=sd(n)) %>% 
+  subset( grepl("F_",treatment)==F) %>% subset(species=="hgla" & !grepl("AS-42", sampleID))%>%
+  ggplot(aes(x=paste(treatment, species), y=(n/hgla_exome)*1000000))+
+  geom_boxplot()+geom_point()+my_theme()+
+  ylab("Mutations per Megabase")+xlab("")+coord_cartesian(ylim=c(0,500))
+AF_b %>% group_by(species,treatment, sampleID) %>% summarise(n=n()) %>% 
+  group_by(species,treatment) %>% mutate(mean=mean(n), sd=sd(n)) %>% 
+  subset( grepl("F_",treatment)==F) %>% subset(species=="mmus" & !grepl("AS-42", sampleID))%>%
+  ggplot(aes(x=paste(treatment, species), y=(n/mmus_exome)*1000000))+
+  geom_boxplot()+geom_point()+my_theme()+
+  ylab("Mutations per Megabase")+xlab("")+coord_cartesian(ylim=c(0,500))
+
+#Figure 2. VAF distribution 
+
+ggplot(AF_b, aes(x=af, fill=sampleID, apha = .1))+
+  geom_density()+my_theme()+scale_fill_my("Sunset")+facet_wrap(treatment~species)
+
+#Figure 12. Where is the signature.
+#For this figure the subsampled version of the samples is also used, because it is completely dependent on the VAF distribution
+
+where<- WhereIsTheSignature(AF = AF_b,
+                              width = 0.01, CosOrTA = "cos", quantiles = T)
+where <- where %>% group_by(species) %>% mutate(int0 = lag(int, default = 0))
+ggplot(where, aes(x=int, fill=pmax(value,0)))+
+  geom_rect(aes(xmin = int0, xmax = int, ymin = 0, ymax = 1))+
+  facet_wrap(~species, ncol = 1 )+
+  scale_fill_gradient(low = my_palette[["Sunset"]][1], high = my_palette[["Sunset"]][6])+
+  my_theme()+
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 20))
+
+#Moving on now to the full depth version of the sequencing, more suitable for identifying signatures and mutated genes
+
+
+hgla_treated <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/Treated/full_depth/Mutation_calling/AF", pattern = ".tsv", full.names = TRUE)
+hgla_control <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/Control/full_depth/Mutation_calling/AF", pattern = ".tsv", full.names = TRUE) 
+mmus_control <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/17618/Mutation_calling/AF", pattern = "G1", full.names = TRUE)
+mmus_treated <-  list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/17618/Mutation_calling/AF", pattern = "B12|D2|H12|H5", full.names = TRUE)
+
+#The same as before is followed
 AF<- list()
 VR <- list()
 CTXT <- list()
@@ -68,117 +128,153 @@ AF_b <- bind_rows(AF)
 CTXT_b <- bind_rows(CTXT)
 CTXT_b_mean <- meanContext(CTXT_b)
 
-#Removing control positions from the naked mole rat fibroblasts
-
-control_positions_F <- AF_b %>% unite(c(chr, pos),sep = "_", col =  "chr_pos") %>% 
-  subset(treatment == "F_control")
-treated_F_no_ctrl <- anti_join(AF_b %>% unite(c(chr, pos),sep = "_", col =  "chr_pos") %>% 
-            subset(treatment == "F_treated"), control_positions_F, by = "chr_pos") %>% 
-  separate("chr_pos", c("chr", "pos"), sep = "_")
-
-AFtoVranges(treated_F_no_ctrl) %>% contextmatrix(species = "hgla", treatment = "treated") %>% 
-  SignaturePlot()+facet_grid(sampleID~SBS2)+scale_fill_my("Sunset")
-
-#Removing control positions from mouse fibroblasts
-control_positions_MEF <- AF_b %>% unite(c(chr, pos),sep = "_", col =  "chr_pos") %>% 
-  subset(treatment == "MEF_control")
-treated_MEF_no_ctrl <- anti_join(AF_b %>% unite(c(chr, pos),sep = "_", col =  "chr_pos") %>% 
-                                 subset(treatment == "MEF_treated"), control_positions_MEF, by = "chr_pos") %>% 
-  separate("chr_pos", c("chr", "pos"), sep = "_")
-
-AFtoVranges(treated_MEF_no_ctrl) %>% contextmatrix(species = "mmus", treatment = "treated") %>% 
-  SignaturePlot()+facet_grid(sampleID~SBS2)+scale_fill_my("Sunset")
-
-
-#Different SBS proportions in different AF?
-
-ggplot(AF_b %>% subset(species=="hgla"), aes(x=af, fill=SBS))+geom_histogram(binwidth = .2, position = "fill")+
-  facet_wrap(~treatment, ncol=1)+my_theme()+scale_fill_my("Sunset")+coord_cartesian(xlim=c(0.2,1))
-
-AF_b %>% subset(species=="hgla" & af > .3 & af < .6 & !grepl("AS-42", sampleID))%>% AFtoVranges()%>%
-  contextmatrix(species = "hgla", treatment = "treated")%>%SignaturePlot()+facet_grid(sampleID~ SBS2)
-bind_rows(AF_b %>% subset(species=="mmus" & treatment == "treated" & !grepl("AS-42", sampleID) & af > .17 & af < .175 )%>% AFtoVranges()%>%
-  contextmatrix(species = "mmus", treatment = "treated"),AF_b %>%
-  subset(species=="mmus" & treatment == "control"  & !grepl("AS-42", sampleID) & af > .17 & af < .175)%>%
-  AFtoVranges()%>%
-  contextmatrix(species = "mmus", treatment = "control"))%>% meanContext()%>% 
-  mutate("value" = pmax(value, 0))%>% subset(treatment == "subtract")%>%
-  SignaturePlot()+
-  facet_grid(treatment~SBS2)+my_theme()+scale_fill_my("Sunset")+
-  theme(axis.text.x = element_text(angle=90, size = 5))
-
-Background_ctxt_0.2_hgla <- subset(AF_b, species == "hgla" & treatment == "control"  & !grepl("AS-42", sampleID) & af > .2) %>% AFtoVranges() %>% contextmatrix(species = "hgla", treatment = "control") %>%  subset(treatment == "control") %>% group_by(species, SBS2, ctxt) %>% summarise(value = mean(value), .groups = "keep")
-CTXT_b_background_removed_0.2_hgla <- subset(AF_b, species == "hgla" & treatment == "treated" & af > .2)%>% AFtoVranges() %>% contextmatrix(species = "hgla", treatment = "treated")%>% inner_join(subset(Background_ctxt_0.2_hgla), by= c("SBS2", "ctxt", "species")) %>% mutate("value" = value.x - value.y)
-SignaturePlot(CTXT_b_background_removed_0.2_hgla %>% subset(species == "hgla" & !grepl("AS-42", sampleID)))+facet_grid(translate_names(gsub("/icgc/dkfzlsdf/analysis/B210/Javi/hgla/Treated/100X/Mutation_calling/AF/", "",sampleID))~SBS2)+scale_fill_my("Sunset")+coord_cartesian(ylim=c(0,6))+theme(axis.text.x = element_text(size=5))
-
-ggplot(AF_b %>% mutate("af_ints" = cut(af, 20)) %>% group_by(af_ints, treatment, species) %>%
-         summarise("A_T" = count(SBS=="T>A")/n()),
-          aes(x=af_ints, y = A_T, color = paste(treatment, species)))+geom_point()+stat_summary( geom="line")
-
-where<- WhereIsTheSignature(AF = AF_b,
-                              width = 0.01, CosOrTA = "cos", quantiles = T)
-where <- where %>% group_by(species) %>% mutate(int0 = lag(int, default = 0))
-ggplot(where, aes(x=int, fill=pmax(value,0)))+
-  geom_rect(aes(xmin = int0, xmax = int, ymin = 0, ymax = 1))+
-  facet_wrap(~species, ncol = 1 )+
-  scale_fill_gradient(low = my_palette[["Sunset"]][1], high = my_palette[["Sunset"]][6])+
-  my_theme()+
-  scale_x_continuous(breaks = scales::pretty_breaks(n = 20))
-ggplot(where, aes(x=quant, y=100*value, color = species))+
-  geom_line()
-
-#Figure1 - Number of Somatic Variants
-
-VCF <- list()
-hgla_exome <- 62083075
-mmus_exome <- 49370117
-genome <- 2.7e9
-exome <- c(hgla_exome, mmus_exome)
-for (i in c("hgla_treated_vcf", "hgla_control_vcf", "mmus_treated_vcf", "mmus_control_vcf")){
-  species <- str_match(i, "mmus|hgla")
-  treatment <- str_match(i, "treated|control")
-  VCF[[i]] <- lapply(get(i), function(x) {readPassVcf(x) %>% mutate("sampleID" = x)})
-}
-VCF_b <- bind_rows(VCF)
-VCF_b_type <- mutate(VCF_b, "Indel" = (nchar(as.character(alt))+nchar(as.character(ref))) == 2)
-VCF_b_type %>% 
-  group_by(species, treatment, sampleID, Indel) %>% summarise("n" = n()) %>% 
-  group_by(species, treatment, sampleID) %>% mutate(total = sum(n)) %>%
-  group_by(species, treatment) %>% mutate("sd"=sd(total)) %>% 
-  group_by(species, treatment, Indel) %>% 
-  summarise("mean"=mean(n), "sd" = sd) %>% unique() %>%group_by(species, treatment) %>%
-  mutate("total" = sum(mean)) %>% 
-  ggplot()+geom_col(aes(fill = Indel, x=treatment, y=mean))+
-  geom_errorbar(aes(x=treatment, ymin=total-sd, ymax= total +sd), 
-                width = 0.3, size = .2)+
-  facet_wrap(~species)+my_theme()+scale_fill_my("Sunset2")
-
-AF_b %>% group_by(species,treatment, sampleID) %>% summarise(n=n()) %>% 
-  group_by(species,treatment) %>% mutate(mean=mean(n), sd=sd(n)) %>% 
-  subset( grepl("F_",treatment)==F) %>% subset(species=="hgla" & !grepl("AS-42", sampleID))%>%
-  ggplot(aes(x=paste(treatment, species), y=(n/hgla_exome)*1000000))+
-  geom_boxplot()+geom_point()+my_theme()+
-  ylab("Mutations per Megabase")+xlab("")+coord_cartesian(ylim=c(0,500))
-#Figure2 - VAF of Somatic Variants
-ggplot(AF_b %>% subset(grepl("F_", treatment) == F)  , aes(x=paste(species, treatment), y=af, fill=treatment))+
-  geom_violin()+geom_boxplot(width=.1, outlier.shape = 1, alpha = .1)+my_theme()+scale_fill_my("Sunset2")
-ggplot(AF_b %>% subset(chr != "7" & !grepl("19|X", chr)), aes(x=af, fill=sampleID, apha = .1))+
-  geom_density()+my_theme()+scale_fill_my("Sunset")+facet_wrap(treatment~species)
-
-#Figure3 - 
- #Intervals
 #Figure 4 - T > A numbers
 
 CTXT_b %>% subset(!grepl("MEF", treatment)) %>% subset(SBS2 == "TA") %>% 
   group_by(species, treatment, ctxt) %>% summarise("sd"=sd(value), "mean" = mean(value)) %>% 
   ggplot()+geom_col(aes(fill = grepl("C.G", ctxt), x=treatment, y=mean*100))+
   facet_wrap(~species)+my_theme()+scale_fill_my("Sunset2")
-#Figure 5 - Signatures
+
+#Figure 5. Signatures
 SignaturePlot(CTXT_b_mean %>% mutate("value" = pmax(value, 0)) %>% subset(species == "hgla" & treatment != "subtract"))+
   facet_grid(treatment~SBS2)+scale_fill_my("Sunset")+coord_cartesian(ylim = c(0,8))
 SignaturePlot(CTXT_b_mean %>% mutate("value" = pmax(value, 0)) %>% subset(species == "hgla" & treatment == "subtract"))+
   facet_grid(treatment~SBS2)+scale_fill_my("Sunset")+coord_cartesian(ylim = c(0,2))
-SignaturePlot(CTXT_b_background_removed %>% subset(species == "hgla"))+facet_grid(sampleID~SBS2)
+SignaturePlot(CTXT_b_mean %>% mutate("value" = pmax(value, 0)) %>% subset(species == "mmus" & treatment != "subtract"))+
+  facet_grid(treatment~SBS2)+scale_fill_my("Sunset")+coord_cartesian(ylim = c(0,8))
+SignaturePlot(CTXT_b_mean %>% mutate("value" = pmax(value, 0)) %>% subset(species == "mmus" & treatment == "subtract"))+
+  facet_grid(treatment~SBS2)+scale_fill_my("Sunset")+coord_cartesian(ylim = c(0,2))
+
+
+#Reading now the mutations in MEF, to extract the mutational signature
+
+mmus_MEF_treated <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/MEF-all/Control-1_is_the_normal/AF", pattern = "a.tsv",  full.names = TRUE, recursive = T)
+mmus_MEF_control <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/MEF-all/Control-1_is_the_normal/AF", pattern = "o.tsv",  full.names = TRUE, recursive = T)
+
+AF<- list()
+for (i in c("mmus_MEF_control", "mmus_MEF_treated")){
+  species <- str_match(i, "mmus|hgla")
+  treatment <- gsub("(hgla|mmus)_", "", i)
+  AF[[i]] <- lapply(get(i), readAF, species = species, treatment = treatment, input = "AF")
+}
+AF_b_MEF <- bind_rows(AF)
+
+#Extracting the mutational signatures found in MEF 
+ctxt_to_extract <- AF_b_MEF %>% 
+  slice_max(af, prop = 0.01)%>% AFtoVranges() %>% contextmatrix(species = "mmus", treatment = "treated") %>% 
+  mutate("sampleID" = translate_names(sampleID))%>%
+  mutate("sampleID" = paste(species, treatment, sampleID)) %>% dplyr::select(-c(species, treatment)) %>%  
+  pivot_wider(names_from = "sampleID", values_from = "value") %>% dplyr::select(-c(SBS2, ctxt))
+sigs <- SomaticSignatures::identifySignatures(as.matrix(ctxt_to_extract), 3, nmfDecomposition, method = "lee") #Selected 3 signatures to extract, could do also 2,4 or 5
+
+#Plotting the mutational signatures (Figure)
+SBS_96 <- rep(c("A.A", "A.C","A.G","A.T","C.A", "C.C","C.G","C.T","G.A", "G.C","G.G","G.T","T.A", "T.C","T.G","T.T"), 6)
+SBS_6 <- c(rep("C>A",16), rep("C>G",16),rep("C>T",16),rep("T>A",16),rep("T>C",16),rep("T>G",16))
+sigs_df <- sigs@signatures %>% as.data.frame() %>% mutate("SBS" = SBS_6, "ctxt" = SBS_96) %>% pivot_longer(cols = colnames(as.data.frame(sigs@signatures)))
+ggplot(sigs_df, aes(x=ctxt, y=value*100, fill=SBS))+geom_col()+facet_grid(name~SBS)+my_theme()+scale_fill_my("Sunset")+
+  theme(axis.text.x = element_text(angle = 90, size = 5), legend.position = 0)
+
+#Plotting the contribution of each signature (Figure)
+sigs_contr_df <- sigs@samples %>% as.data.frame() %>% mutate("sigs" = paste0("S",1:3)) %>% 
+  pivot_longer(cols=colnames(as.data.frame(sigs@samples)),names_to = "sampleID" )
+ggplot(sigs_contr_df, aes(x=sampleID, y= value, fill = sigs))+
+  geom_col()+my_theme()+scale_fill_my("Sunset")+
+  theme(axis.text.x = element_text(angle=90))
+
+#Fitting the signatures to the skin samples  
+ctxt_to_fit <- CTXT_b  %>%  mutate("sampleID" = paste(species, treatment, sampleID)) %>% 
+dplyr::select(-c(species, treatment)) %>%  pivot_wider(names_from = "sampleID", values_from = "value") %>% 
+dplyr::select(-c(SBS2, ctxt))
+DMBA_cosmic <- cbind(as.matrix(sigs@signatures), siglasso::cosmic_v3_exo[,c(7:10,43)]) %>%
+ as.matrix() #Adding the COSMIC signatures to fit them witht the extracted signatures
+
+#Fitting and plotting all at once (Figure)
+MutationalPatterns::fit_to_signatures(mut_matrix = as.matrix(ctxt_to_fit),
+                                      signatures = DMBA_cosmic) %>%
+   .$contribution %>% t() %>% as.data.frame() %>% mutate("sampleID" = rownames(.)) %>%  
+  pivot_longer(names_to = "sig", cols = colnames(.)[-length(colnames(.))]) %>% 
+  mutate("sig" = gsub("a|b|c|d", "", sig))%>%
+  ggplot( aes(x=grepl("treated", sampleID), y=100*value, fill=sig))+
+  geom_col(width = .8, position = "fill")+my_theme()+
+  facet_wrap(~grepl("hgla", sampleID), nrow = 1)+
+  theme(axis.text.x = element_text(angle = 90))+scale_fill_my("Sunset")
+
+#The next steps are to obtain figures 13 and 14, nonsynonymous mutations and clones
+#Read a table with the mutated genes in the full depth samples. Also a result of the Somatic Variant Calling pipeline
+GeneNames <- list()
+for (i in c("hgla_treated", "hgla_control", "mmus_treated", "mmus_control")){
+  Sliced <- get(i) %>% gsub("AF", "genes", .) %>% gsub(".tsv", "_sliced.bed", .)
+  species <- str_match(i, "mmus|hgla")
+  treatment <- gsub("(hgla|mmus)_", "", i)
+  for (j in 1:length(Sliced)){
+  GeneNames[[i]][[j]] <- SlicedtoGeneNames(Sliced[j], AF= get(i)[j] ,species = species, treatment = treatment)
+}}
+GeneNames_b <- bind_rows(GeneNames) #Bind rows of all samples
+GeneNames_b_Martin <- CompareGeneNamesMartincorena(GeneNames_b, genes = "dndscv") #Select mutated genes that are also present in the list of genenames given in the dndscv package
+#The comparison is made with the function Compare GeneNamesMartincorena
+
+#Load now the result from variant effect predictor, also part of the Somatic Variant Calling pipeline
+hgla_treated_vcf <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/Treated/full_depth/Mutation_calling", pattern = "pass.vcf", full.names = TRUE, recursive = T)
+hgla_control_vcf <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/hgla/Control/full_depth/Mutation_calling", pattern = "pass.vcf", full.names = TRUE, recursive = T) 
+mmus_vcf <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/17618/Mutation_calling", pattern = "pass.vcf", full.names = TRUE, recursive = T) 
+mmus_treated_vcf <- mmus_vcf[1:4]
+mmus_control_vcf <- mmus_vcf[5]
+
+#And format the table to make it compatible with the GeneNames table
+vep <- list()
+for (i in c("hgla_control_vcf", "hgla_treated_vcf", "mmus_control_vcf", "mmus_treated_vcf")){
+  Sliced <- get(i) %>% gsub("calling/", "calling/vep/", .) %>% gsub("/pass.vcf", ".vcf", .)
+  species <- str_match(i, "mmus|hgla")
+  treatment <-  str_match(i, "treated|control")
+  for (j in 1:length(Sliced)){
+    sample <- Sliced[j] %>%  gsub("/icgc/dkfzlsdf/analysis/B210/Javi/(hgla|mmus)/(Treated|Control|17618)/(full_depth/|)Mutation_calling/vep/", "", .) %>% gsub(".vcf", "", .) %>% translate_names()
+    vep[[i]][[j]] <- read.table(Sliced[j], sep = "\t") %>% unique() %>% mutate("species" = species, "treatment" = treatment, "sampleID" = sample) %>% 
+      separate(V1, c("chr", "pos", "ref"), sep = "_") %>% separate(ref, c("ref", "alt"), sep = "/") %>% dplyr::select(-c(V2,V3,V6,paste0("V",8:13))) %>%
+      unite("chr_pos", c(chr,pos), sep = "_") %>% separate(V14, into = c("impact"), sep = ";") %>%group_by(chr_pos, V4, V5) %>% 
+      mutate(V7 = paste(V7, collapse = ",") %>% gsub("_variant","",.), "impact"=paste(impact, collapse = ",") ) %>%
+      separate(V7, into =c("consequence", NA), sep = ",", remove = F) %>% mutate("consequence" = gsub("(downstream|upstream)_gene|intergenic|non_coding_transcript_exon", "noncoding", consequence) %>% gsub("coding_sequence|incomplete_terminal_codon|stop_lost|protein_altering|start_lost|inframe_insertion|inframe_deletion", NA, .) %>% gsub("splice_(donor|region|acceptor)|intron", "splice_site", .)) %>%
+      dplyr::rename("gene_id"=V4, "transcript_id"=V5) %>% dplyr::select(-V7)%>% unique() 
+  }}
+vep_b <- bind_rows(vep)
+#Add then the predicted effect of the mutation to all the mutations
+vep_GeneNames <- inner_join(GeneNames_b, vep_b, by = c("sampleID", "species", "chr_pos", "gene_id", "ref", "alt", "treatment"))
+#And to the mutations in the gene list by Martincorena et al.
+vep_GeneNames_Martin <- inner_join(GeneNames_b_Martin, vep_b, by = c("sampleID", "species", "chr_pos", "gene_id", "ref", "alt", "treatment"))
+ 
+#Figure 13. Mutant clones, clone sizes
+vep_GeneNames_Martin %>% subset(grepl("missense|frameshift|splice|stop", consequence)) %>% 
+  subset(af > .2 & region == "gene" & gene_name != "" & treatment == "treated" & grepl("B7|B8|E2|E7|D2|B12|H12|H5", sampleID)) %>% group_by(gene_name) %>% mutate("n" = length(unique(sampleID))) %>%
+  ungroup() %>% slice_max(order_by = n, n = 50 ) %>%
+  plotGeneNamesPoints()+facet_wrap(species+treatment ~ sampleID, nrow = 2)+
+  scale_fill_my("Sunset")+scale_color_my("Sunset")+
+  theme(panel.border = element_rect(fill=NA), axis.ticks = element_blank(),
+        axis.text = element_blank(), legend.title = element_blank(), strip.text = element_blank(),
+        axis.ticks.x=element_blank(), axis.line = element_blank())+xlab("")+ylab("")
+
+#Figure 14. Mutated cancer driver genes
+vep_GeneNames_Martin %>% subset(grepl("missense|frameshift|splice|stop", consequence)) %>%
+  subset( region == "gene" & gene_name != "" & treatment == "treated") %>% group_by(gene_name) %>% mutate("n" = length(unique(sampleID))) %>%
+  ungroup()%>%
+  ggplot(aes(x=gene_name, y=paste(species, sampleID), fill = species))+geom_tile()+my_theme()+
+  scale_fill_my("Sunset2")+theme(legend.position = 0, axis.text.x = element_text(angle = 90, size = 8),
+                                 panel.grid.minor = element_line(color = "black"))
+
+
+
+
+
+#################################################################################################################################
+#By: Javier Botey
+# The following code includes analysis performed and not included in the final version of the dissertation.
+# Other visualizations tried for the figures, dndscv, cosine similarity of mutational spectrums and expanded mutational spectrums...
+
+
+
+
+
+
+
+
 
 
 
@@ -200,8 +296,8 @@ SignaturePlot(CTXT_b_background_removed %>% subset(species == "mmus"))+facet_gri
 
 #Extracting signatures from each sample
 
-ctxt_to_extract <- subset(AF_b, species == "hgla" & grepl("F", treatment)) %>% 
-  slice_max(af, prop = 0.01)%>% AFtoVranges() %>% contextmatrix(species = "hgla", treatment = "treated") %>% 
+ctxt_to_extract <- subset(AF_b, species == "mmus" & grepl("F", treatment)) %>% 
+  slice_max(af, prop = 0.01)%>% AFtoVranges() %>% contextmatrix(species = "mmus", treatment = "treated") %>% 
   mutate("sampleID" = translate_names(gsub("/icgc/dkfzlsdf/analysis/B210/Javi/hgla/ispr07/3o_is_the_normal/AF/", "",sampleID)))%>%
   mutate("sampleID" = paste(species, treatment, sampleID)) %>% dplyr::select(-c(species, treatment)) %>%  
   pivot_wider(names_from = "sampleID", values_from = "value") %>% dplyr::select(-c(SBS2, ctxt))
