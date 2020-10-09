@@ -1,0 +1,164 @@
+---
+title: "WES coverage"
+author: "Javier Botey with help from Fritjof Lammers"
+output:
+  html_document:
+    df_print: paged
+params:
+  myFolder: ""
+---
+
+Reporting coverage for genomic regions of WES experiments. 
+
+
+```{r load_deps, include=FALSE, warnings=FALSE}
+library(knitr)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(kableExtra)
+```
+
+```{r definitions, echo=F}
+data.dir <- params$myFolder
+test.mode <- FALSE # testmode uses only a subset of the data
+```
+
+```{r init_testmode, echo=F}
+nrows = 0
+if (test.mode) {
+  nrows = 10000
+}
+```
+
+
+```{r load_data, eval=TRUE, echo=FALSE}
+flist <- list.files(data.dir, pattern="*[(target|nontarget)]*.bed.gz", full.names = T)
+df.all <- data.frame(fname = character(),
+                 sampleName = character(),
+                 region = character(),
+                 readCount = numeric(),
+                 meanCoverage = numeric(),
+                 chrom = character(),
+                 chromStart = numeric(),
+                 chromEnd = numeric(),
+                 species = character(),
+                 stringsAsFactors = F)
+for (fname in flist) {
+  if ( file.info(fname)$size == 0) {
+    print(paste("Warning! File is empty: ", fname))
+    next() # file is empty, skipping
+  }
+  df <- read.delim(gzfile(fname), header = T, comment.char = "", nrows = nrows)
+  df$sampleName <- gsub("_(TUMOR|NORMAL).*", "", basename(fname)) 
+  # check if file is a "intergenic" bed file
+  # those don't have region-fields because it is missing in the inital bed files
+  # this is a stupid hack, but faster than rerunning the analysis
+  if ( grepl("intergenic", fname) ) { 
+    colnames(df) <- c("chrom","chromStart","chromEnd", "readCount", "meanCoverage","sampleName")
+    df$region <- "intergenic"
+  } else if ( grepl("nontarget", fname) ) { 
+    colnames(df) <- c("chrom","chromStart","chromEnd", "readCount", "meanCoverage","sampleName")
+    df$region <- "nontarget"
+  } else if ( grepl("target", fname) ) { 
+    colnames(df) <- c("chrom","chromStart","chromEnd", "readCount", "meanCoverage","sampleName")
+    df$region <- "target"
+  } else {
+    colnames(df) <- c("chrom","chromStart","chromEnd","region", "score", "strand", "readCount", "meanCoverage","sampleName")
+  }
+  df %>%  dplyr::select("chrom","chromStart","chromEnd","region", "readCount", "meanCoverage","sampleName") -> df
+  df$species = str_match(fname, "(hgla|mmus)")[[2]]
+  df$fname <- fname
+  df.all <- rbind(df.all, df)
+  }
+saveRDS(df.all, "wes-df.Rds")
+```
+
+```{r, echo=F}
+df.all <- readRDS("wes-df.Rds")
+```
+
+
+
+
+```{r load_data_otr, echo=F}
+readCoverageQC <- function(flist) {
+  df.all <- data.frame()
+  for (fname in flist) {
+    if ( file.info(fname)$size == 0) {
+      print(paste("Warning! File is empty: ", fname))
+      next() # file is empty, skipping
+    }
+    df <- read.delim(gzfile(fname), header = T, comment.char = "", nrows = nrows)
+    df$sampleName <- gsub("_(TUMOR|NORMAL).*", "", basename(fname))
+    df$species = str_match(fname, "(hgla|mmus)")[[2]]
+    df$fname <- fname
+    if (length(df.all) == 0) {
+        df.all <- df
+    }
+    else { 
+      df.all <- rbind(df.all, df)
+      }
+    }
+  return(df.all)
+}
+flist <- list.files(data.dir, pattern="*.targets_coverageQC.tsv", full.names = T)
+df.covQC_targets <- readCoverageQC(flist)
+df.covQC_targets$origin <- "target"
+flist <- list.files(data.dir, pattern="*\\.coverageQC.tsv", full.names = T)
+df.covQC <- readCoverageQC(flist)
+df.covQC$origin <- "all"
+df.all2 <- rbind(df.covQC, df.covQC_targets)
+```
+
+
+
+
+```{r estimate_otr, echo=F, fig.height=4, fig.width=8, eval=T}
+ 
+df.all2 %>% filter(interval == "all") %>%
+  dplyr::select(sampleName,species,origin,X.QC.bases..total.not_N.bases) %>%
+  separate(X.QC.bases..total.not_N.bases, c("QC.bases", "genomelength"), sep = "/", convert = TRUE )%>% dplyr::select(-matches("genomelength")) %>% 
+  group_by(sampleName, species, origin) %>% spread(origin, QC.bases) %>% mutate(otr=target/all, targetCov = target/4.9e7, genomeCov=all/2.7e9) -> df.otr
+kable(df.otr, format="html", digits = 3) %>% kable_styling(bootstrap_options = "striped")
+#Now I have to divide all the coverages to the minimum one and get a number for every samples that should be samtools view -s 
+```
+
+
+```{r}
+my.df <- data.frame(sample = df.otr$sampleName, coverage = df.otr$targetCov)
+#my.df2 <- my.df %>% mutate(coverage= min(na.omit(my.df$coverage))/coverage) #When the depth threshold is set to the minimum of the batch
+my.df2 <- my.df %>% mutate(coverage= 100/coverage) %>% mutate( coverage = pmin(.$coverage, 0.999999999999999)) #When the depth threshold is set to the be 170X
+write.table(na.omit(my.df2), file = paste0(data.dir,"view_values.tsv"), sep = "\t")
+```
+```{r plot_histo, echo=F, fig.height=3, fig.width=8, warning=F}
+df.all %>% 
+  mutate(sampleName = gsub(data.dir, "", fname)) %>%
+  filter(region %in% c("target", "nontarget")) -> df.plot
+  df.tmpl <- df.plot %>% subset(region == "target")
+  df.tmpl$sampleName <- gsub("*.target.bed.gz", "" , df.tmpl$sampleName)
+
+violin_plot <- ggplot(df.tmpl) + geom_violin(aes(x= sampleName, y=meanCoverage, fill=region))+theme_minimal()+coord_cartesian(ylim = c(0, 1000))+theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+density_plot <- ggplot(df.tmpl) + geom_density(aes(x=meanCoverage, fill=region))+theme_minimal()+theme(axis.text.x = element_text(angle = 90, hjust = 1))+coord_cartesian(xlim=c(0,1000))+facet_wrap(~sampleName)
+
+otr_plot <- ggplot(df.otr)+geom_col(aes(x= sampleName, y= otr, fill= species))+theme_minimal()+theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+violin_plot
+density_plot
+otr_plot
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
