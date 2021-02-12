@@ -199,7 +199,7 @@ ggplot(sigs_contr_df, aes(x=sampleID, y= value, fill = sigs))+
 
 #Fitting the signatures to the skin samples  
 
-DMBA_sig <- read_delim("/icgc/dkfzlsdf/analysis/B210/Javi/DMBA-signature", delim = "\t") %>% .$DMBA %>% as.numeric() %>% pmax(0)
+DMBA_sig <- read_delim("/icgc/dkfzlsdf/analysis/B210/Javi/DMBA-signature", delim = "\t")
 ctxt_to_fit <- CTXT_b  %>%  mutate("sampleID" = paste(species, treatment, sampleID)) %>% 
 dplyr::select(-c(species, treatment)) %>%  pivot_wider(names_from = "sampleID", values_from = "value") %>% 
 dplyr::select(-c(SBS2, ctxt))
