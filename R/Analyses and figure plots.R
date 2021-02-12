@@ -203,7 +203,7 @@ dplyr::select(-c(species, treatment)) %>%  pivot_wider(names_from = "sampleID", 
 dplyr::select(-c(SBS2, ctxt))
 DMBA_cosmic <- cbind(as.matrix(sigs@signatures), siglasso::cosmic_v3_exo[,c(7:10,43)]) %>%
  as.matrix() #Adding the COSMIC signatures to fit them witht the extracted signatures
-
+#Pablo
 #Fitting and plotting all at once (Figure)
 MutationalPatterns::fit_to_signatures(mut_matrix = as.matrix(ctxt_to_fit),
                                       signatures = DMBA_cosmic) %>%
