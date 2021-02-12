@@ -66,10 +66,12 @@ CTXT_b <- bind_rows(CTXT)
 CTXT_b_mean <- meanContext(CTXT_b) # The mean context for each species and treatment is obtained with this function and a subtracted average context
 
 #Figure . VAF distribution 
+pdf("AF distribution.pdf")
 
 ggplot(AF_b, aes(x=af, fill=sampleID, apha = .1))+
   geom_density()+my_theme()+scale_fill_my("Sunset")+facet_wrap(treatment~species)
 
+dev.off()
 
 #Figure . Signature similarity. The box
 
@@ -78,6 +80,8 @@ where<- WhereIsTheSignature(AF = AF_b,
 
 where <- where %>% group_by(species) %>% mutate(int0 = lag(int, default = 0))
 
+pdf("Signature similarity box.pdf")
+
 ggplot(where, aes(x=int, fill=pmax(value,0)))+
   geom_rect(aes(xmin = int0, xmax = int, ymin = 0, ymax = 1))+
   facet_wrap(~species, ncol = 1 )+
@@ -85,6 +89,7 @@ ggplot(where, aes(x=int, fill=pmax(value,0)))+
   my_theme()+
   scale_x_continuous(breaks = scales::pretty_breaks(n = 20))
 
+dev.off()
 
 #Figure . Signature spectrum plot for specific AF ranges.
 
@@ -92,6 +97,7 @@ ggplot(where, aes(x=int, fill=pmax(value,0)))+
 h_thr_l<- 0.2
 h_thr_u<- 0.25
 
+pdf("Signature spectrum NMR.pdf")
 #Plotting
 bind_rows(AF_b %>%
             subset(species=="hgla" & treatment == "treated"  & af > h_thr_l & af < h_thr_u) %>%
@@ -103,10 +109,12 @@ bind_rows(AF_b %>%
   mutate("value" = pmax(value, 0)) %>% subset(treatment == "subtract")%>% SignaturePlot()+
   facet_grid(treatment~SBS2)+scale_fill_my("Sunset")+coord_cartesian(ylim = c(0,1.5))
 
+dev.off()
 #Setting the lower and upper AF thresholds for mmus
 m_thr_l<- 0.12
 m_thr_u<- 0.2
 
+pdf("Signature spectrum mouse.pdf")
 bind_rows(AF_b %>% subset(species=="mmus" & treatment == "treated"  & af > m_thr_l & af < m_thr_u)%>% AFtoVranges()%>%
             contextmatrix(species = "mmus", treatment = "treated"), AF_b %>%
             subset(species=="mmus" & treatment == "control"   & af > m_thr_l & af < m_thr_u)%>%
@@ -114,7 +122,7 @@ bind_rows(AF_b %>% subset(species=="mmus" & treatment == "treated"  & af > m_thr
             contextmatrix(species = "mmus", treatment = "control"))%>% meanContext() %>%
   mutate("value" = pmax(value, 0)) %>% subset(treatment == "subtract")%>% SignaturePlot()+
   facet_grid(treatment~SBS2)+scale_fill_my("Sunset")+coord_cartesian(ylim = c(0,1.5))
-
+dev.off()
 
 #Full depth for mutational signatures
 #Moving on now to the full depth version of the sequencing, more suitable for identifying signatures and mutated genes
@@ -193,7 +201,7 @@ DMBA_cosmic <- cbind(as.matrix(sigs@signature), siglasso::cosmic_v3_exo[,c(7:10,
 
 #Figure . Signature fitting to mouse and NMR skin samples
 
-
+pdf("Fitted signatures.pdf")
 MutationalPatterns::fit_to_signatures(mut_matrix = as.matrix(ctxt_to_fit),
                                       signatures = DMBA_cosmic) %>%
   .$contribution %>% t() %>% as.data.frame() %>% mutate("sampleID" = rownames(.)) %>%  
@@ -203,4 +211,4 @@ MutationalPatterns::fit_to_signatures(mut_matrix = as.matrix(ctxt_to_fit),
   geom_col(width = .8, position = "fill")+my_theme()+
   facet_wrap(~grepl("hgla", sampleID), nrow = 1)+
   theme(axis.text.x = element_text(angle = 90))+scale_fill_my("Sunset")
-
+dev.off()
