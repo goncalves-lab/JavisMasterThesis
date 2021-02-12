@@ -101,7 +101,7 @@ bind_rows(AF_b %>% subset(species=="hgla" & treatment == "treated"  & af > 0.2 &
               subset(species=="hgla" & treatment == "control"   & af > 0.2 & af < 0.5)%>%
               AFtoVranges()%>%
               contextmatrix(species = "hgla", treatment = "control"))%>% meanContext() %>% mutate("value" = pmax(value, 0)) %>% subset(treatment == "subtract")%>% SignaturePlot()+
-  facet_grid(treatment~SBS2)+scale_fill_my("Sunset")+coord_cartesian(ylim = c(0,8))
+  facet_grid(treatment~SBS2)+scale_fill_my("Sunset")+coord_cartesian(ylim = c(0,1.5))
 
 #Moving on now to the full depth version of the sequencing, more suitable for identifying signatures and mutated genes
 
