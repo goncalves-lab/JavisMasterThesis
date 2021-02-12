@@ -94,6 +94,14 @@ ggplot(where, aes(x=int, fill=pmax(value,0)))+
   my_theme()+
   scale_x_continuous(breaks = scales::pretty_breaks(n = 20))
 
+##Pablo
+
+bind_rows(AF_b %>% subset(species=="hgla" & treatment == "treated"  & af > 0.2 & af < 0.5 )%>% AFtoVranges()%>%
+              contextmatrix(species = "hgla", treatment = "treated"), AF_b %>%
+              subset(species=="hgla" & treatment == "control"   & af > 0.2 & af < 0.5)%>%
+              AFtoVranges()%>%
+              contextmatrix(species = "hgla", treatment = "control"))%>% meanContext() %>% SignaturePlot()
+
 #Moving on now to the full depth version of the sequencing, more suitable for identifying signatures and mutated genes
 
 
