@@ -96,11 +96,18 @@ ggplot(where, aes(x=int, fill=pmax(value,0)))+
 
 ##Pablo
 
-bind_rows(AF_b %>% subset(species=="hgla" & treatment == "treated"  & af > 0.2 & af < 0.5 )%>% AFtoVranges()%>%
+bind_rows(AF_b %>% subset(species=="hgla" & treatment == "treated"  & af > 0.2 & af < 0.25 )%>% AFtoVranges()%>%
               contextmatrix(species = "hgla", treatment = "treated"), AF_b %>%
-              subset(species=="hgla" & treatment == "control"   & af > 0.2 & af < 0.5)%>%
+              subset(species=="hgla" & treatment == "control"   & af > 0.2 & af < 0.25)%>%
               AFtoVranges()%>%
               contextmatrix(species = "hgla", treatment = "control"))%>% meanContext() %>% mutate("value" = pmax(value, 0)) %>% subset(treatment == "subtract")%>% SignaturePlot()+
+  facet_grid(treatment~SBS2)+scale_fill_my("Sunset")+coord_cartesian(ylim = c(0,1.5))
+
+bind_rows(AF_b %>% subset(species=="mmus" & treatment == "treated"  & af > 0.12 & af < 0.2 )%>% AFtoVranges()%>%
+              contextmatrix(species = "mmus", treatment = "treated"), AF_b %>%
+              subset(species=="mmus" & treatment == "control"   & af > 0.12 & af < 0.2)%>%
+              AFtoVranges()%>%
+              contextmatrix(species = "mmus", treatment = "control"))%>% meanContext() %>% mutate("value" = pmax(value, 0)) %>% subset(treatment == "subtract")%>% SignaturePlot()+
   facet_grid(treatment~SBS2)+scale_fill_my("Sunset")+coord_cartesian(ylim = c(0,1.5))
 
 #Moving on now to the full depth version of the sequencing, more suitable for identifying signatures and mutated genes
