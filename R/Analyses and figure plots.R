@@ -164,8 +164,8 @@ SignaturePlot(CTXT_b_mean %>% mutate("value" = pmax(value, 0)) %>% subset(specie
 
 #Reading now the mutations in MEF, to extract the mutational signature
 
-mmus_MEF_treated <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/MEF-all/Control-1_is_the_normal/AF", pattern = "a.tsv",  full.names = TRUE, recursive = T)
-mmus_MEF_control <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/MEF-all/Control-1_is_the_normal/AF", pattern = "o.tsv",  full.names = TRUE, recursive = T)
+mmus_MEF_treated <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/MEF-all/Control1/AF", pattern = "a.tsv",  full.names = TRUE, recursive = T)
+mmus_MEF_control <- list.files(path = "/icgc/dkfzlsdf/analysis/B210/Javi/mmus/MEF-all/Control1/AF", pattern = "o.tsv",  full.names = TRUE, recursive = T)
 
 AF<- list()
 for (i in c("mmus_MEF_control", "mmus_MEF_treated")){
@@ -198,10 +198,12 @@ ggplot(sigs_contr_df, aes(x=sampleID, y= value, fill = sigs))+
   theme(axis.text.x = element_text(angle=90))
 
 #Fitting the signatures to the skin samples  
+
+DMBA_sig <- read_delim("/icgc/dkfzlsdf/analysis/B210/Javi/DMBA-signature", delim = "\t") %>% .$DMBA %>% as.numeric() %>% pmax(0)
 ctxt_to_fit <- CTXT_b  %>%  mutate("sampleID" = paste(species, treatment, sampleID)) %>% 
 dplyr::select(-c(species, treatment)) %>%  pivot_wider(names_from = "sampleID", values_from = "value") %>% 
 dplyr::select(-c(SBS2, ctxt))
-DMBA_cosmic <- cbind(as.matrix(sigs@signatures), siglasso::cosmic_v3_exo[,c(7:10,43)]) %>%
+DMBA_cosmic <- cbind(as.matrix(DMBA_sig), siglasso::cosmic_v3_exo[,c(7:10,43)]) %>%
  as.matrix() #Adding the COSMIC signatures to fit them witht the extracted signatures
 #Pablo
 #Fitting and plotting all at once (Figure)
